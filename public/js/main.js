@@ -16,6 +16,8 @@ class Game {
         this.setupEventListeners();
         this.checkUrlForGame();
         this.setupSocketListeners();
+        this.loadSavedTheme();
+        this.loadPanelStates();
     }
     
     setupEventListeners() {
@@ -55,6 +57,36 @@ class Game {
             if (e.key === 'Escape') {
                 this.hideHelp();
             }
+        });
+        
+        // Theme picker functionality
+        document.getElementById('board-color-picker').addEventListener('input', (e) => {
+            this.updateBoardTheme(e.target.value);
+        });
+        
+        // Theme preset buttons
+        document.querySelectorAll('.theme-preset').forEach(button => {
+            button.addEventListener('click', () => {
+                const color = button.dataset.color;
+                this.updateBoardTheme(color);
+                document.getElementById('board-color-picker').value = color;
+                
+                // Update active state
+                document.querySelectorAll('.theme-preset').forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+            });
+        });
+        
+        // Contrast slider functionality
+        document.getElementById('contrast-slider').addEventListener('input', (e) => {
+            this.updateBoardContrast(parseInt(e.target.value));
+        });
+        
+        // Panel toggle functionality
+        document.querySelectorAll('.panel-header').forEach(header => {
+            header.addEventListener('click', () => {
+                this.togglePanel(header.dataset.panel);
+            });
         });
     }
     
@@ -214,6 +246,155 @@ class Game {
         } else {
             gameStatusElement.textContent = status;
         }
+    }
+    
+    updateBoardTheme(hexColor, contrast = null) {
+        // Convert hex to HSL
+        const hsl = this.hexToHsl(hexColor);
+        
+        // Use current contrast if not provided
+        if (contrast === null) {
+            contrast = parseInt(document.documentElement.style.getPropertyValue('--board-contrast') || '25');
+        }
+        
+        // Calculate lightness values based on contrast
+        const baseLight = Math.max(hsl.l + contrast, 60);
+        const baseDark = Math.max(hsl.l - contrast, 25);
+        
+        // Update CSS custom properties
+        document.documentElement.style.setProperty('--board-theme-hue', hsl.h);
+        document.documentElement.style.setProperty('--board-theme-saturation', hsl.s + '%');
+        document.documentElement.style.setProperty('--board-theme-lightness-light', baseLight + '%');
+        document.documentElement.style.setProperty('--board-theme-lightness-dark', baseDark + '%');
+        
+        // Store in localStorage for persistence
+        const themeData = {
+            color: hexColor,
+            contrast: contrast
+        };
+        localStorage.setItem('chess-board-theme', JSON.stringify(themeData));
+    }
+    
+    updateBoardContrast(contrast) {
+        document.documentElement.style.setProperty('--board-contrast', contrast);
+        
+        // Re-apply current theme with new contrast
+        const currentColor = document.getElementById('board-color-picker').value;
+        this.updateBoardTheme(currentColor, contrast);
+    }
+    
+    hexToHsl(hex) {
+        // Remove # if present
+        hex = hex.replace('#', '');
+        
+        // Convert to RGB
+        const r = parseInt(hex.substr(0, 2), 16) / 255;
+        const g = parseInt(hex.substr(2, 2), 16) / 255;
+        const b = parseInt(hex.substr(4, 2), 16) / 255;
+        
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const diff = max - min;
+        
+        let h = 0;
+        let s = 0;
+        let l = (max + min) / 2;
+        
+        if (diff !== 0) {
+            s = l > 0.5 ? diff / (2 - max - min) : diff / (max + min);
+            
+            switch (max) {
+                case r:
+                    h = (g - b) / diff + (g < b ? 6 : 0);
+                    break;
+                case g:
+                    h = (b - r) / diff + 2;
+                    break;
+                case b:
+                    h = (r - g) / diff + 4;
+                    break;
+            }
+            h /= 6;
+        }
+        
+        return {
+            h: Math.round(h * 360),
+            s: Math.round(s * 100),
+            l: Math.round(l * 100)
+        };
+    }
+    
+    loadSavedTheme() {
+        const savedThemeData = localStorage.getItem('chess-board-theme');
+        let themeColor = '#D4A574';
+        let themeContrast = 25;
+        
+        if (savedThemeData) {
+            try {
+                // Try to parse as JSON (new format)
+                const themeObj = JSON.parse(savedThemeData);
+                themeColor = themeObj.color || '#D4A574';
+                themeContrast = themeObj.contrast || 25;
+            } catch (e) {
+                // Fallback to old format (just hex color)
+                themeColor = savedThemeData;
+                themeContrast = 25;
+            }
+        }
+        
+        // Apply the theme
+        this.updateBoardTheme(themeColor, themeContrast);
+        
+        // Update UI controls
+        document.getElementById('board-color-picker').value = themeColor;
+        document.getElementById('contrast-slider').value = themeContrast;
+        
+        // Set active preset if it matches
+        document.querySelectorAll('.theme-preset').forEach(button => {
+            button.classList.toggle('active', button.dataset.color.toLowerCase() === themeColor.toLowerCase());
+        });
+        
+        // If no preset matches, make sure none are active
+        if (!document.querySelector('.theme-preset.active')) {
+            // Custom color, no preset should be active
+        }
+    }
+    
+    togglePanel(panelName) {
+        const content = document.getElementById(panelName + '-content');
+        const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);
+        
+        if (content.classList.contains('collapsed')) {
+            // Expand panel
+            content.classList.remove('collapsed');
+            content.style.maxHeight = content.scrollHeight + 'px';
+            toggle.textContent = '−';
+        } else {
+            // Collapse panel
+            content.classList.add('collapsed');
+            content.style.maxHeight = '0px';
+            toggle.textContent = '+';
+        }
+        
+        // Save panel state
+        localStorage.setItem(`chess-panel-${panelName}`, content.classList.contains('collapsed') ? 'collapsed' : 'expanded');
+    }
+    
+    loadPanelStates() {
+        ['controls', 'theme', 'history'].forEach(panelName => {
+            const state = localStorage.getItem(`chess-panel-${panelName}`);
+            const content = document.getElementById(panelName + '-content');
+            const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);
+            
+            if (state === 'collapsed') {
+                content.classList.add('collapsed');
+                content.style.maxHeight = '0px';
+                toggle.textContent = '+';
+            } else {
+                content.style.maxHeight = content.scrollHeight + 'px';
+                toggle.textContent = '−';
+            }
+        });
     }
     
     updatePlayerInfo(players) {

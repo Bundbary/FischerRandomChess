@@ -35,23 +35,71 @@
         </div>
 
         <div class="side-panel">
-            <div class="controls">
-                <button id="new-game-btn">New Game</button>
-                <button id="join-game-btn">Join Game</button>
-            </div>
-
-            <div id="game-link" class="game-link hidden">
-                <label>Share this link:</label>
-                <input type="text" id="game-url" readonly>
-                <div class="link-buttons">
-                    <button id="copy-link-btn">Copy Link</button>
-                    <button id="open-link-btn">Open in New Tab</button>
+            <div class="panel-section">
+                <div class="panel-header" data-panel="controls">
+                    <h3>Game Controls</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="controls-content">
+                    <div class="controls">
+                        <button id="new-game-btn">New Game</button>
+                        <button id="join-game-btn">Join Game</button>
+                    </div>
+                    <div id="game-link" class="game-link hidden">
+                        <label>Share this link:</label>
+                        <input type="text" id="game-url" readonly>
+                        <div class="link-buttons">
+                            <button id="copy-link-btn">Copy Link</button>
+                            <button id="open-link-btn">Open in New Tab</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <div id="move-history" class="move-history">
-                <h3>Move History</h3>
-                <div id="moves-list"></div>
+            <div class="panel-section">
+                <div class="panel-header" data-panel="theme">
+                    <h3>Board Theme</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="theme-content">
+                    <div class="theme-picker">
+                        <div class="color-picker-container">
+                            <label for="board-color-picker">Board Color:</label>
+                            <input type="color" id="board-color-picker" value="#D4A574">
+                            <div class="theme-presets">
+                                <button class="theme-preset" data-color="#D4A574" style="background: #D4A574" title="Classic"></button>
+                                <button class="theme-preset" data-color="#7fa650" style="background: #7fa650" title="Green"></button>
+                                <button class="theme-preset" data-color="#5c85ad" style="background: #5c85ad" title="Blue"></button>
+                                <button class="theme-preset" data-color="#a04747" style="background: #a04747" title="Red"></button>
+                                <button class="theme-preset" data-color="#8b5a8c" style="background: #8b5a8c" title="Purple"></button>
+                                <button class="theme-preset" data-color="#808080" style="background: #808080" title="Grey"></button>
+                            </div>
+                            
+                            <div class="contrast-control">
+                                <label for="contrast-slider">Contrast:</label>
+                                <div class="slider-container">
+                                    <input type="range" id="contrast-slider" min="10" max="50" value="25" step="5">
+                                    <div class="slider-labels">
+                                        <span>Low</span>
+                                        <span>High</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-header" data-panel="history">
+                    <h3>Move History</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="history-content">
+                    <div id="move-history" class="move-history">
+                        <div id="moves-list"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

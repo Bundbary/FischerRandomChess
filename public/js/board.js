@@ -294,7 +294,7 @@ export class ChessBoard {
         });
     }
     
-    calculatePossibleMoves(from, piece) {
+    calculatePossibleMoves(from, piece, skipCastling = false) {
         const moves = [];
         const file = from.charCodeAt(0) - 97; // a=0, b=1, etc.
         const rank = parseInt(from[1]);
@@ -316,7 +316,7 @@ export class ChessBoard {
                 this.calculateQueenMoves(moves, file, rank, piece.color);
                 break;
             case 'k': // King
-                this.calculateKingMoves(moves, file, rank, piece.color);
+                this.calculateKingMoves(moves, file, rank, piece.color, skipCastling);
                 break;
         }
         
@@ -417,7 +417,7 @@ export class ChessBoard {
         });
     }
     
-    calculateKingMoves(moves, file, rank, color) {
+    calculateKingMoves(moves, file, rank, color, skipCastling = false) {
         const kingMoves = [
             [-1, -1], [-1, 0], [-1, 1],
             [0, -1], [0, 1],
@@ -436,8 +436,10 @@ export class ChessBoard {
             }
         });
         
-        // Add castling moves
-        this.addCastlingMoves(moves, file, rank, color);
+        // Add castling moves only if not checking for attacks (to prevent recursion)
+        if (!skipCastling) {
+            this.addCastlingMoves(moves, file, rank, color);
+        }
     }
     
     addCastlingMoves(moves, file, rank, color) {
@@ -600,7 +602,7 @@ export class ChessBoard {
         for (const [fromSquare, piece] of Object.entries(this.board)) {
             if (piece && piece.color === attackingColor) {
                 // For attack calculation, use basic moves without castling to avoid recursion
-                const possibleMoves = this.calculatePossibleMoves(fromSquare, piece);
+                const possibleMoves = this.calculatePossibleMoves(fromSquare, piece, true);
                 if (possibleMoves.includes(square)) {
                     return true;
                 }
