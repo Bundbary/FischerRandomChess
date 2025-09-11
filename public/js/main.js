@@ -380,6 +380,15 @@ class Game {
         localStorage.setItem(`chess-panel-${panelName}`, content.classList.contains('collapsed') ? 'collapsed' : 'expanded');
     }
     
+    recalculatePanelHeight(panelName) {
+        const content = document.getElementById(panelName + '-content');
+        
+        // Only recalculate if panel is not collapsed
+        if (!content.classList.contains('collapsed')) {
+            content.style.maxHeight = content.scrollHeight + 'px';
+        }
+    }
+    
     loadPanelStates() {
         ['controls', 'theme', 'history'].forEach(panelName => {
             const state = localStorage.getItem(`chess-panel-${panelName}`);
@@ -446,6 +455,11 @@ class Game {
         
         gameUrlInput.value = gameUrl;
         gameLinkDiv.classList.remove('hidden');
+        
+        // Recalculate panel height after DOM update
+        setTimeout(() => {
+            this.recalculatePanelHeight('controls');
+        }, 10);
     }
     
     copyGameLink() {

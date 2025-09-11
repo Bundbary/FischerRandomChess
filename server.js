@@ -7,12 +7,33 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
+// Serve lobby as default page
+app.get('/', (req, res) => {
+    if (req.query.game) {
+        // If there's a game parameter, serve the game
+        res.sendFile(path.join(__dirname, 'index.html'));
+    } else {
+        // Otherwise serve the lobby
+        res.sendFile(path.join(__dirname, 'lobby.html'));
+    }
+});
+
+// Explicit game route
+app.get('/game', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // Serve static files from public directory and root
 app.use(express.static('public'));
 app.use(express.static('.'));
 
 // Store active games in memory
 const games = new Map();
+
+// Store lobby data
+const lobbyPlayers = new Map(); // socketId -> { username, status, socketId }
+const lobbyChallenges = new Map(); // challengeId -> { challenger, type, targetPlayer, challengerId }
+const lobbyChatHistory = [];
 
 // Server-side move validation (simplified version of client logic)
 function isValidMove(board, from, to, piece) {
@@ -396,8 +417,180 @@ function createInitialBoard(backRank) {
     return board;
 }
 
+// Lobby helper functions
+function broadcastLobbyUpdate() {
+    io.emit('players-update', Object.fromEntries(lobbyPlayers));
+    io.emit('challenges-update', Object.fromEntries(lobbyChallenges));
+    io.emit('active-games-update', Object.fromEntries(games));
+    io.emit('player-count', lobbyPlayers.size);
+}
+
+function generateChallengeId() {
+    return Math.random().toString(36).substr(2, 9);
+}
+
+function addSystemMessage(message) {
+    const systemMessage = {
+        type: 'system',
+        message: message,
+        timestamp: new Date().toISOString()
+    };
+    lobbyChatHistory.push(systemMessage);
+    io.emit('chat-message', systemMessage);
+    
+    // Keep only last 50 messages
+    if (lobbyChatHistory.length > 50) {
+        lobbyChatHistory.shift();
+    }
+}
+
 io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
+    
+    // Add to lobby players
+    lobbyPlayers.set(socket.id, {
+        socketId: socket.id,
+        username: '',
+        status: 'Available'
+    });
+    
+    // Send current state to new player
+    socket.emit('players-update', Object.fromEntries(lobbyPlayers));
+    socket.emit('challenges-update', Object.fromEntries(lobbyChallenges));
+    socket.emit('active-games-update', Object.fromEntries(games));
+    socket.emit('player-count', lobbyPlayers.size);
+    
+    // Send chat history
+    lobbyChatHistory.slice(-10).forEach(message => {
+        socket.emit('chat-message', message);
+    });
+    
+    // Lobby event handlers
+    socket.on('set-username', (username) => {
+        const player = lobbyPlayers.get(socket.id);
+        if (player) {
+            const oldUsername = player.username;
+            player.username = username.trim().substring(0, 20);
+            
+            if (oldUsername) {
+                addSystemMessage(`${oldUsername} is now known as ${player.username}`);
+            } else {
+                addSystemMessage(`${player.username} joined the lobby`);
+            }
+            
+            broadcastLobbyUpdate();
+        }
+    });
+    
+    socket.on('chat-message', (message) => {
+        const player = lobbyPlayers.get(socket.id);
+        if (player && player.username) {
+            const chatMessage = {
+                type: 'user',
+                username: player.username,
+                message: message.trim().substring(0, 200),
+                timestamp: new Date().toISOString()
+            };
+            
+            lobbyChatHistory.push(chatMessage);
+            io.emit('chat-message', chatMessage);
+            
+            // Keep only last 50 messages
+            if (lobbyChatHistory.length > 50) {
+                lobbyChatHistory.shift();
+            }
+        }
+    });
+    
+    socket.on('create-challenge', (challengeData) => {
+        const player = lobbyPlayers.get(socket.id);
+        if (!player || !player.username) {
+            socket.emit('error', 'Please set your username first');
+            return;
+        }
+        
+        const challengeId = generateChallengeId();
+        const challenge = {
+            id: challengeId,
+            challenger: player.username,
+            challengerId: socket.id,
+            type: challengeData.type,
+            targetPlayer: challengeData.targetPlayer,
+            timestamp: new Date().toISOString()
+        };
+        
+        lobbyChallenges.set(challengeId, challenge);
+        broadcastLobbyUpdate();
+        
+        const targetName = challengeData.type === 'specific' ? 
+            lobbyPlayers.get(challengeData.targetPlayer)?.username || 'Unknown' : 
+            'anyone';
+        
+        addSystemMessage(`${player.username} created a challenge against ${targetName}`);
+    });
+    
+    socket.on('accept-challenge', (challengeId) => {
+        const challenge = lobbyChallenges.get(challengeId);
+        const player = lobbyPlayers.get(socket.id);
+        
+        if (!challenge || !player || !player.username) {
+            socket.emit('error', 'Challenge not found or no username set');
+            return;
+        }
+        
+        // Create game
+        const gameId = generateGameId();
+        const game = createGame(gameId);
+        games.set(gameId, game);
+        
+        // Set up players
+        game.players[challenge.challengerId] = {
+            color: 'white',
+            id: challenge.challengerId,
+            name: challenge.challenger
+        };
+        
+        game.players[socket.id] = {
+            color: 'black',
+            id: socket.id,
+            name: player.username
+        };
+        
+        game.status = 'active';
+        
+        // Remove challenge
+        lobbyChallenges.delete(challengeId);
+        
+        // Notify players
+        const challengerSocket = io.sockets.sockets.get(challenge.challengerId);
+        if (challengerSocket) {
+            challengerSocket.emit('challenge-accepted', { gameId });
+        }
+        socket.emit('challenge-accepted', { gameId });
+        
+        addSystemMessage(`${player.username} accepted ${challenge.challenger}'s challenge!`);
+        broadcastLobbyUpdate();
+    });
+    
+    socket.on('quick-play', () => {
+        const player = lobbyPlayers.get(socket.id);
+        if (!player || !player.username) {
+            socket.emit('error', 'Please set your username first');
+            return;
+        }
+        
+        // Find any open challenge
+        const openChallenge = Array.from(lobbyChallenges.values())
+            .find(c => c.type === 'anyone' && c.challengerId !== socket.id);
+        
+        if (openChallenge) {
+            // Accept the first available challenge
+            socket.emit('accept-challenge', openChallenge.id);
+        } else {
+            // Create an open challenge
+            socket.emit('create-challenge', { type: 'anyone' });
+        }
+    });
 
     socket.on('create-game', () => {
         const gameId = generateGameId();
@@ -524,6 +717,25 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
         
+        // Remove from lobby
+        const player = lobbyPlayers.get(socket.id);
+        if (player && player.username) {
+            addSystemMessage(`${player.username} left the lobby`);
+        }
+        lobbyPlayers.delete(socket.id);
+        
+        // Remove any challenges created by this player
+        const challengesToRemove = [];
+        for (const [challengeId, challenge] of lobbyChallenges.entries()) {
+            if (challenge.challengerId === socket.id) {
+                challengesToRemove.push(challengeId);
+            }
+        }
+        challengesToRemove.forEach(id => lobbyChallenges.delete(id));
+        
+        // Broadcast lobby updates
+        broadcastLobbyUpdate();
+        
         // Remove player from any games
         for (const [gameId, game] of games.entries()) {
             if (game.players[socket.id]) {
@@ -545,7 +757,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Open http://localhost:${PORT} to play`);

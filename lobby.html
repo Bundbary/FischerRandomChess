@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fischer Random Chess - Lobby</title>
+    <link rel="stylesheet" href="/css/lobby.css">
+</head>
+<body>
+    <header>
+        <h1>♔ Fischer Random Chess Lobby</h1>
+        <div class="header-controls">
+            <div id="player-count">0 players online</div>
+            <button id="help-btn" class="help-button">?</button>
+        </div>
+    </header>
+
+    <div class="lobby-container">
+        <div class="left-section">
+            <div class="panel-section">
+                <div class="panel-header" data-panel="players">
+                    <h3>🎮 Players Online</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="players-content">
+                    <div class="player-controls">
+                        <div class="username-input">
+                            <input type="text" id="username" placeholder="Enter your name..." maxlength="20">
+                            <div class="username-buttons">
+                                <button id="set-username-btn">Set Name</button>
+                                <button id="anonymous-btn" class="anonymous-btn">Anonymous</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="players-list" class="players-list">
+                        <div class="no-players">No players online</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-header" data-panel="challenges">
+                    <h3>⚔️ Open Challenges</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="challenges-content">
+                    <div class="challenge-controls">
+                        <button id="create-challenge-btn" class="primary-btn">Create Challenge</button>
+                        <button id="quick-play-btn" class="secondary-btn">Quick Play</button>
+                    </div>
+                    <div id="challenges-list" class="challenges-list">
+                        <div class="no-challenges">No open challenges</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-section">
+            <div class="panel-section">
+                <div class="panel-header" data-panel="chat">
+                    <h3>💬 Lobby Chat</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="chat-content">
+                    <div id="chat-messages" class="chat-messages">
+                        <div class="system-message">Welcome to the Fischer Random Chess lobby! 🎉</div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+                        <button id="send-chat-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="panel-header" data-panel="games">
+                    <h3>🏆 Active Games</h3>
+                    <button class="panel-toggle">−</button>
+                </div>
+                <div class="panel-content" id="games-content">
+                    <div id="active-games-list" class="active-games-list">
+                        <div class="no-games">No active games</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Challenge Modal -->
+    <div id="challenge-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Challenge</h2>
+                <button id="close-challenge-modal" class="close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="challenge-options">
+                    <label>
+                        <input type="radio" name="challenge-type" value="anyone" checked>
+                        Open to anyone
+                    </label>
+                    <label>
+                        <input type="radio" name="challenge-type" value="specific">
+                        Challenge specific player:
+                        <select id="challenge-player-select" disabled>
+                            <option value="">Select player...</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="challenge-actions">
+                    <button id="confirm-challenge-btn" class="primary-btn">Create Challenge</button>
+                    <button id="cancel-challenge-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="help-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Fischer Random Chess Lobby</h2>
+                <button id="close-help" class="close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="help-section">
+                    <h3>🎯 How to Play</h3>
+                    <ul>
+                        <li><strong>Set your name</strong> to appear in the player list</li>
+                        <li><strong>Create Challenge</strong> to invite others to play</li>
+                        <li><strong>Accept challenges</strong> by clicking on them</li>
+                        <li><strong>Quick Play</strong> to join any available game</li>
+                        <li><strong>Chat</strong> with other players in the lobby</li>
+                    </ul>
+                </div>
+                <div class="help-section">
+                    <h3>♜ Fischer Random Chess</h3>
+                    <p>Also known as Chess960, this variant randomizes the starting positions of pieces on the back rank, creating 960 possible starting positions. This eliminates opening theory and emphasizes creativity and skill.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="/js/lobby.js"></script>
+</body>
+</html>
