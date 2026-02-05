@@ -6,6 +6,7 @@ export class ChessBoard {
         this.board = {};
         this.playerColor = 'white'; // Default to white, will be set when joining game
         this.enPassantTarget = null; // Track en passant target square
+        this.castleRights = null; // Track castling rights from server
         
         // Chess piece SVG files
         this.pieceImages = {
@@ -443,132 +444,72 @@ export class ChessBoard {
     }
     
     addCastlingMoves(moves, file, rank, color) {
-        // Only check castling from king's starting rank
-        const startRank = color === 'white' ? 1 : 8;
-        if (rank !== startRank) return;
-        
+        if (!this.castleRights) return;
+        const rights = this.castleRights[color];
+        if (!rights) return;
+
         const kingSquare = String.fromCharCode(97 + file) + rank;
-        
-        // Check if king has moved (in a real implementation, we'd track this)
-        // For now, assume pieces on starting squares haven't moved
-        if (!this.hasKingMoved(color) && !this.isKingInCheck(color)) {
-            // Kingside castling (final positions: King on g-file, Rook on f-file)
-            if (this.canCastleKingside(color)) {
-                const kingsideTarget = 'g' + rank;
-                moves.push(kingsideTarget);
+
+        // Don't castle out of check
+        if (this.isKingInCheck(color)) return;
+
+        // Kingside
+        if (rights.kingsideRook) {
+            const rookSquare = rights.kingsideRook;
+            if (this.board[rookSquare] && this.board[rookSquare].piece === 'r' && this.board[rookSquare].color === color) {
+                const kingDest = 'g' + rank;
+                const rookDest = 'f' + rank;
+                if (this.isCastlingPathClear(kingSquare, rookSquare, kingDest, rookDest) &&
+                    !this.wouldPassThroughCheck(kingSquare, kingDest, color)) {
+                    moves.push(kingDest);
+                }
             }
-            
-            // Queenside castling (final positions: King on c-file, Rook on d-file)
-            if (this.canCastleQueenside(color)) {
-                const queensideTarget = 'c' + rank;
-                moves.push(queensideTarget);
+        }
+
+        // Queenside
+        if (rights.queensideRook) {
+            const rookSquare = rights.queensideRook;
+            if (this.board[rookSquare] && this.board[rookSquare].piece === 'r' && this.board[rookSquare].color === color) {
+                const kingDest = 'c' + rank;
+                const rookDest = 'd' + rank;
+                if (this.isCastlingPathClear(kingSquare, rookSquare, kingDest, rookDest) &&
+                    !this.wouldPassThroughCheck(kingSquare, kingDest, color)) {
+                    moves.push(kingDest);
+                }
             }
         }
     }
-    
-    hasKingMoved(color) {
-        // Simple implementation: assume king hasn't moved if it's on the back rank
-        // In a full implementation, we'd track piece movements
-        const startRank = color === 'white' ? 1 : 8;
-        const kingSquare = this.findKing(color);
-        return kingSquare ? parseInt(kingSquare[1]) !== startRank : true;
-    }
-    
-    canCastleKingside(color) {
-        const rank = color === 'white' ? 1 : 8;
-        const fSquare = 'f' + rank;
-        const gSquare = 'g' + rank;
-        const hSquare = 'h' + rank;
-        
-        // Find the rook on the kingside (rightmost rook)
-        let kingsideRook = null;
-        for (let f = 7; f >= 0; f--) {
-            const square = String.fromCharCode(97 + f) + rank;
-            const piece = this.board[square];
-            if (piece && piece.piece === 'r' && piece.color === color) {
-                kingsideRook = square;
-                break;
-            }
-        }
-        
-        if (!kingsideRook) return false;
-        
-        // Check if final positions are clear (f and g files)
-        if (this.board[fSquare] || this.board[gSquare]) return false;
-        
-        // Check if squares between king and rook are clear
-        const kingSquare = this.findKing(color);
-        if (!kingSquare) return false;
-        
+
+    isCastlingPathClear(kingSquare, rookSquare, kingDest, rookDest) {
+        const rank = kingSquare[1];
         const kingFile = kingSquare.charCodeAt(0) - 97;
-        const rookFile = kingsideRook.charCodeAt(0) - 97;
-        
-        for (let f = Math.min(kingFile + 1, rookFile); f < Math.max(kingFile, rookFile); f++) {
-            const square = String.fromCharCode(97 + f) + rank;
-            if (square !== kingSquare && square !== kingsideRook && this.board[square]) {
-                return false;
-            }
+        const rookFile = rookSquare.charCodeAt(0) - 97;
+        const kingDestFile = kingDest.charCodeAt(0) - 97;
+        const rookDestFile = rookDest.charCodeAt(0) - 97;
+
+        const minFile = Math.min(kingFile, rookFile, kingDestFile, rookDestFile);
+        const maxFile = Math.max(kingFile, rookFile, kingDestFile, rookDestFile);
+
+        for (let f = minFile; f <= maxFile; f++) {
+            const sq = String.fromCharCode(97 + f) + rank;
+            if (sq === kingSquare || sq === rookSquare) continue;
+            if (this.board[sq]) return false;
         }
-        
-        // Check if king passes through check
-        return !this.wouldPassThroughCheck(kingSquare, gSquare, color);
+        return true;
     }
-    
-    canCastleQueenside(color) {
-        const rank = color === 'white' ? 1 : 8;
-        const cSquare = 'c' + rank;
-        const dSquare = 'd' + rank;
-        
-        // Find the rook on the queenside (leftmost rook)
-        let queensideRook = null;
-        for (let f = 0; f < 8; f++) {
-            const square = String.fromCharCode(97 + f) + rank;
-            const piece = this.board[square];
-            if (piece && piece.piece === 'r' && piece.color === color) {
-                queensideRook = square;
-                break;
-            }
-        }
-        
-        if (!queensideRook) return false;
-        
-        // Check if final positions are clear (c and d files)
-        if (this.board[cSquare] || this.board[dSquare]) return false;
-        
-        // Check if squares between king and rook are clear
-        const kingSquare = this.findKing(color);
-        if (!kingSquare) return false;
-        
-        const kingFile = kingSquare.charCodeAt(0) - 97;
-        const rookFile = queensideRook.charCodeAt(0) - 97;
-        
-        for (let f = Math.min(kingFile, rookFile) + 1; f < Math.max(kingFile, rookFile); f++) {
-            const square = String.fromCharCode(97 + f) + rank;
-            if (square !== kingSquare && square !== queensideRook && this.board[square]) {
-                return false;
-            }
-        }
-        
-        // Check if king passes through check
-        return !this.wouldPassThroughCheck(kingSquare, cSquare, color);
-    }
-    
+
     wouldPassThroughCheck(from, to, color) {
         const fromFile = from.charCodeAt(0) - 97;
         const toFile = to.charCodeAt(0) - 97;
         const rank = parseInt(from[1]);
-        
-        // Check each square the king passes through
-        const start = Math.min(fromFile, toFile);
-        const end = Math.max(fromFile, toFile);
-        
-        for (let f = start; f <= end; f++) {
+        const step = fromFile < toFile ? 1 : -1;
+
+        for (let f = fromFile; f !== toFile + step; f += step) {
             const square = String.fromCharCode(97 + f) + rank;
             if (this.isSquareUnderAttack(square, color)) {
                 return true;
             }
         }
-        
         return false;
     }
     

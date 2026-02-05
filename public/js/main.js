@@ -95,6 +95,7 @@ class Game {
             this.gameId = data.gameId;
             this.playerColor = data.color;
             this.board.setPlayerColor(data.color); // Set board orientation
+            this.board.castleRights = data.castleRights || null;
             this.board.setupBoard(data.board);
             this.updateGameStatus('Waiting for opponent...');
             this.showGameLink(data.gameUrl);
@@ -104,6 +105,7 @@ class Game {
             this.gameId = data.gameId;
             this.playerColor = data.color;
             this.board.setPlayerColor(data.color); // Set board orientation
+            this.board.castleRights = data.castleRights || null;
             this.board.setupBoard(data.board);
             this.updateGameStatus('Game joined! Waiting for white to move...');
         });
@@ -120,36 +122,45 @@ class Game {
         this.socket.on('move-made', (data) => {
             this.board.setupBoard(data.board);
             this.currentTurn = data.currentTurn;
-            
+
             // Update en passant target from server data
-            if (data.enPassantTarget) {
-                this.board.enPassantTarget = data.enPassantTarget;
-            } else {
-                this.board.enPassantTarget = null;
+            this.board.enPassantTarget = data.enPassantTarget || null;
+
+            // Update castle rights from server data
+            if (data.castleRights) {
+                this.board.castleRights = data.castleRights;
             }
-            
-            // Check for check status and update game status accordingly
-            const isInCheck = this.board.isKingInCheck(this.currentTurn);
-            let statusMessage;
-            
-            if (isInCheck) {
-                const isYourTurn = this.currentTurn === this.playerColor;
-                if (isYourTurn) {
-                    statusMessage = `Check! Your king is in danger`;
-                } else {
-                    statusMessage = `Check! Opponent's king is in danger`;
+
+            // Handle game over
+            if (data.gameOver) {
+                let statusMessage;
+                if (data.gameOver.type === 'checkmate') {
+                    const winnerIsMe = data.gameOver.winner === this.playerColor;
+                    statusMessage = winnerIsMe ? 'Checkmate! You win!' : 'Checkmate! You lose.';
+                } else if (data.gameOver.type === 'stalemate') {
+                    statusMessage = 'Stalemate - Draw!';
                 }
+                this.updateGameStatus(statusMessage);
+                this.board.setInteractive(false);
+                this.updateMoveHistory(data.moves);
+                return;
+            }
+
+            // Check status
+            let statusMessage;
+            if (data.inCheck) {
+                const isYourTurn = this.currentTurn === this.playerColor;
+                statusMessage = isYourTurn ? 'Check! Your king is in danger' : "Check! Opponent's king is in danger";
             } else {
                 statusMessage = `${this.currentTurn}'s turn`;
             }
-            
+
             this.updateGameStatus(statusMessage);
             this.board.setInteractive(this.playerColor === this.currentTurn);
             this.updateMoveHistory(data.moves);
-            
-            // Update player indicators to show whose turn it is
+
+            // Update player indicators
             if (this.gameId) {
-                // Simulate player data for turn highlighting
                 const players = [
                     { color: this.playerColor, name: this.playerColor === 'white' ? 'White Player' : 'Black Player' },
                     { color: this.playerColor === 'white' ? 'black' : 'white', name: this.playerColor === 'white' ? 'Black Player' : 'White Player' }
@@ -159,7 +170,7 @@ class Game {
         });
         
         this.socket.on('error', (message) => {
-            alert(message);
+            this.showModal(message);
         });
         
         this.socket.on('player-disconnected', (data) => {
@@ -189,32 +200,26 @@ class Game {
     }
     
     showJoinGamePrompt() {
-        const gameId = prompt('Enter game ID:');
-        if (gameId) {
-            this.joinGame(gameId);
-        }
+        this.showModal('Enter game ID:', { prompt: true }).then(gameId => {
+            if (gameId) {
+                this.joinGame(gameId);
+            }
+        });
     }
     
     makeMove(from, to) {
         if (this.playerColor !== this.currentTurn) {
             return false;
         }
-        
-        const piece = this.board.board[from];
-        
-        // Check if this is a special move and execute it locally first
-        if (this.board.isCastlingMove(from, to)) {
-            this.board.executeCastling(from, to);
-        } else if (this.board.isEnPassantMove(from, to)) {
-            this.board.executeEnPassant(from, to);
-        }
-        
+
+        // Send move to server for validation and execution
+        // Board will be updated when server responds with 'move-made'
         this.socket.emit('make-move', {
             gameId: this.gameId,
             from,
             to
         });
-        
+
         return true;
     }
     
@@ -500,6 +505,49 @@ class Game {
         document.getElementById('help-modal').classList.add('hidden');
     }
     
+    showModal(message, options = {}) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('generic-modal');
+            const titleEl = document.getElementById('generic-modal-title');
+            const msgEl = document.getElementById('generic-modal-message');
+            const inputWrap = document.getElementById('generic-modal-input-wrap');
+            const inputEl = document.getElementById('generic-modal-input');
+            const okBtn = document.getElementById('generic-modal-ok');
+            const cancelBtn = document.getElementById('generic-modal-cancel');
+            const closeBtn = document.getElementById('close-generic-modal');
+
+            titleEl.textContent = options.title || 'Notice';
+            msgEl.textContent = message;
+
+            if (options.prompt) {
+                inputWrap.classList.remove('hidden');
+                cancelBtn.classList.remove('hidden');
+                inputEl.value = '';
+            } else {
+                inputWrap.classList.add('hidden');
+                cancelBtn.classList.add('hidden');
+            }
+
+            modal.classList.remove('hidden');
+            if (options.prompt) inputEl.focus();
+
+            const cleanup = (value) => {
+                modal.classList.add('hidden');
+                okBtn.removeEventListener('click', onOk);
+                cancelBtn.removeEventListener('click', onCancel);
+                closeBtn.removeEventListener('click', onCancel);
+                resolve(value);
+            };
+
+            const onOk = () => cleanup(options.prompt ? inputEl.value : true);
+            const onCancel = () => cleanup(options.prompt ? null : false);
+
+            okBtn.addEventListener('click', onOk);
+            cancelBtn.addEventListener('click', onCancel);
+            closeBtn.addEventListener('click', onCancel);
+        });
+    }
+
     updateMoveHistory(moves) {
         const movesList = document.getElementById('moves-list');
         movesList.innerHTML = '';

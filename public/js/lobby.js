@@ -127,14 +127,8 @@ class ChessLobby {
             }
         });
         
-        // Warn before leaving if user is signed in
-        window.addEventListener('beforeunload', (e) => {
-            if (this.username) {
-                e.preventDefault();
-                e.returnValue = 'You are currently signed into the lobby. Are you sure you want to leave?';
-                return e.returnValue;
-            }
-        });
+        // No beforeunload warning — it blocks browser automation and
+        // the lobby reconnects fine on reload anyway.
     }
     
     setupSocketListeners() {
