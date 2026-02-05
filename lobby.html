@@ -107,17 +107,33 @@
             </div>
             <div class="modal-body">
                 <div class="challenge-options">
-                    <label>
-                        <input type="radio" name="challenge-type" value="anyone" checked>
-                        Open to anyone
-                    </label>
-                    <label>
-                        <input type="radio" name="challenge-type" value="specific">
-                        Challenge specific player:
-                        <select id="challenge-player-select" disabled>
-                            <option value="">Select player...</option>
-                        </select>
-                    </label>
+                    <div class="option-group">
+                        <label class="option-label">Game Type:</label>
+                        <div class="variant-buttons">
+                            <label class="variant-option">
+                                <input type="radio" name="challenge-variant" value="fischer" checked>
+                                <span class="variant-btn">♔ Fischer Random</span>
+                            </label>
+                            <label class="variant-option">
+                                <input type="radio" name="challenge-variant" value="standard">
+                                <span class="variant-btn">♚ Standard Chess</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="option-group">
+                        <label class="option-label">Opponent:</label>
+                        <label>
+                            <input type="radio" name="challenge-type" value="anyone" checked>
+                            Open to anyone
+                        </label>
+                        <label>
+                            <input type="radio" name="challenge-type" value="specific">
+                            Challenge specific player:
+                            <select id="challenge-player-select" disabled>
+                                <option value="">Select player...</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
                 <div class="challenge-actions">
                     <button id="confirm-challenge-btn" class="primary-btn">Create Challenge</button>

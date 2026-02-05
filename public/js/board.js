@@ -7,6 +7,7 @@ export class ChessBoard {
         this.playerColor = 'white'; // Default to white, will be set when joining game
         this.enPassantTarget = null; // Track en passant target square
         this.castleRights = null; // Track castling rights from server
+        this.lastMove = null; // Track last move {from, to} for highlighting
         
         // Chess piece SVG files
         this.pieceImages = {
@@ -95,9 +96,17 @@ export class ChessBoard {
         const squares = this.boardElement.querySelectorAll('.square');
         squares.forEach(square => {
             square.innerHTML = '';
-            square.classList.remove('selected', 'possible-move', 'highlighted');
+            square.classList.remove('selected', 'possible-move', 'highlighted', 'last-move-from', 'last-move-to');
         });
-        
+
+        // Highlight last move squares
+        if (this.lastMove) {
+            const fromSquare = this.boardElement.querySelector(`[data-square="${this.lastMove.from}"]`);
+            const toSquare = this.boardElement.querySelector(`[data-square="${this.lastMove.to}"]`);
+            if (fromSquare) fromSquare.classList.add('last-move-from');
+            if (toSquare) toSquare.classList.add('last-move-to');
+        }
+
         // Place pieces
         Object.entries(this.board).forEach(([square, piece]) => {
             const squareElement = this.boardElement.querySelector(`[data-square="${square}"]`);
@@ -106,9 +115,13 @@ export class ChessBoard {
                 squareElement.innerHTML = `<img class="piece" src="${imageSrc}" alt="${piece.color} ${piece.piece}" draggable="false">`;
             }
         });
-        
+
         // Update check indicators
         this.updateCheckIndicator();
+    }
+
+    setLastMove(from, to) {
+        this.lastMove = from && to ? { from, to } : null;
     }
     
     handleSquareClick(event) {

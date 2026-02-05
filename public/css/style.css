@@ -18,7 +18,7 @@ body {
     background: #312e2b;
     color: #b8b1a7;
     font-size: 14px;
-    overflow-x: hidden;
+    overflow: hidden;
 }
 
 .container {
@@ -430,6 +430,16 @@ header h1 {
     transition: all 0.2s ease;
 }
 
+.square.last-move-from,
+.square.last-move-to {
+    background-color: rgba(255, 255, 120, 0.5) !important;
+}
+
+.square.last-move-from::before,
+.square.last-move-to::before {
+    background-color: rgba(200, 180, 80, 0.4) !important;
+}
+
 .square.selected {
     background-color: #f7f769 !important;
 }
@@ -479,65 +489,80 @@ header h1 {
     display: flex;
     flex-direction: column;
     height: calc(100vh - 48px);
-    overflow-y: auto;
+    overflow-y: scroll;
+    overflow-x: hidden;
     margin-top: 48px;
     min-width: 320px;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent; /* Firefox: hidden by default */
 }
 
+.side-panel:hover {
+    scrollbar-color: #4a4741 transparent; /* Firefox: show on hover */
+}
+
+/* Webkit: thin scrollbar, hidden by default */
+.side-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.side-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.side-panel::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+}
+
+.side-panel:hover::-webkit-scrollbar-thumb {
+    background: #4a4741;
+}
+
+.side-panel::-webkit-scrollbar-thumb:hover {
+    background: #5a5751;
+}
+
+/* Panel sections using native details/summary */
 .panel-section {
     border-bottom: 1px solid #4a4741;
 }
 
 .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    display: block;
     padding: 12px 16px;
     background: #3e3c38;
     cursor: pointer;
     transition: background 0.2s ease;
+    color: #f0d9b5;
+    font-size: 14px;
+    font-weight: 500;
+    list-style: none; /* Remove default triangle */
+}
+
+.panel-header::-webkit-details-marker {
+    display: none; /* Remove default triangle in webkit */
+}
+
+.panel-header::before {
+    content: '+';
+    float: right;
+    font-size: 18px;
+    font-weight: bold;
+    color: #b8b1a7;
+    transition: transform 0.2s ease;
+}
+
+.panel-section[open] > .panel-header::before {
+    content: '−';
 }
 
 .panel-header:hover {
     background: #4a4741;
 }
 
-.panel-header h3 {
-    color: #f0d9b5;
-    font-size: 14px;
-    font-weight: 500;
-    margin: 0;
-}
-
-.panel-toggle {
-    background: none;
-    border: none;
-    color: #b8b1a7;
-    font-size: 18px;
-    font-weight: bold;
-    cursor: pointer;
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    transition: all 0.2s ease;
-}
-
-.panel-toggle:hover {
-    background: #262421;
-    color: #f0d9b5;
-}
-
 .panel-content {
-    overflow: visible;
-    transition: max-height 0.3s ease;
-}
-
-.panel-content.collapsed {
-    max-height: 0;
-    overflow: hidden;
+    /* No overflow hacks needed - details handles it */
 }
 
 .controls {
@@ -565,6 +590,38 @@ header h1 {
     background: #4a4741;
     color: #6b645a;
     cursor: not-allowed;
+}
+
+.controls button.danger-btn {
+    background: #a04747;
+}
+
+.controls button.danger-btn:hover:not(:disabled) {
+    background: #b85555;
+}
+
+.controls button.small-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    width: auto;
+}
+
+.draw-offer-banner {
+    background: rgba(118, 150, 86, 0.2);
+    border: 1px solid #769656;
+    border-radius: 4px;
+    padding: 12px;
+    margin: 8px 16px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.draw-offer-banner span {
+    color: #f0d9b5;
+    font-weight: 500;
+    flex: 1;
 }
 
 .game-link {
@@ -751,7 +808,6 @@ header h1 {
     padding: 16px;
     overflow-y: auto;
     max-height: 300px;
-    min-height: 120px;
 }
 
 #moves-list {

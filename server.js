@@ -7,6 +7,9 @@ const fs = require('fs');
 // Games persistence folder
 const GAMES_DIR = path.join(__dirname, 'games');
 
+// Standard chess starting position (back rank)
+const STANDARD_BACK_RANK = ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'];
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
@@ -172,6 +175,7 @@ function getGamesForUser(username) {
         if (game.white?.name === username || game.black?.name === username) {
             userGames.push({
                 id: game.id,
+                variant: game.variant || 'fischer',
                 white: game.white?.name,
                 black: game.black?.name,
                 currentTurn: game.currentTurn,
@@ -632,8 +636,9 @@ function generateFischerRandomPosition() {
 }
 
 // Create initial game state
-function createGame(gameId, whiteName = null, blackName = null) {
-    const backRank = generateFischerRandomPosition();
+function createGame(gameId, whiteName = null, blackName = null, variant = 'fischer') {
+    // Use standard position or generate Fischer Random
+    const backRank = variant === 'standard' ? [...STANDARD_BACK_RANK] : generateFischerRandomPosition();
 
     // Find rook and king positions for castle rights
     let kingFile = null;
@@ -658,6 +663,7 @@ function createGame(gameId, whiteName = null, blackName = null) {
 
     const game = {
         id: gameId,
+        variant: variant, // 'standard' or 'fischer'
         white: whiteName ? { name: whiteName } : null,
         black: blackName ? { name: blackName } : null,
         players: {}, // Socket connections (transient)
@@ -760,18 +766,30 @@ io.on('connection', (socket) => {
     // Lobby event handlers
     socket.on('set-username', (username) => {
         const player = lobbyPlayers.get(socket.id);
-        if (player) {
-            const oldUsername = player.username;
-            player.username = escapeHtml(username.trim().substring(0, 20));
-            
-            if (oldUsername) {
-                addSystemMessage(`${oldUsername} is now known as ${player.username}`);
-            } else {
-                addSystemMessage(`${player.username} joined the lobby`);
+        if (!player) return;
+
+        const sanitizedName = escapeHtml(username.trim().substring(0, 20));
+
+        // Check if username is already taken by another player
+        for (const [socketId, otherPlayer] of lobbyPlayers.entries()) {
+            if (socketId !== socket.id &&
+                otherPlayer.username &&
+                otherPlayer.username.toLowerCase() === sanitizedName.toLowerCase()) {
+                socket.emit('error', 'Username already taken');
+                return;
             }
-            
-            broadcastLobbyUpdate();
         }
+
+        const oldUsername = player.username;
+        player.username = sanitizedName;
+
+        if (oldUsername) {
+            addSystemMessage(`${oldUsername} is now known as ${player.username}`);
+        } else {
+            addSystemMessage(`${player.username} joined the lobby`);
+        }
+
+        broadcastLobbyUpdate();
     });
     
     socket.on('chat-message', (message) => {
@@ -800,44 +818,48 @@ io.on('connection', (socket) => {
             socket.emit('error', 'Please set your username first');
             return;
         }
-        
+
         const challengeId = generateChallengeId();
+        const variant = challengeData.variant || 'fischer'; // Default to fischer for backwards compatibility
         const challenge = {
             id: challengeId,
             challenger: player.username,
             challengerId: socket.id,
             type: challengeData.type,
             targetPlayer: challengeData.targetPlayer,
+            variant: variant,
             timestamp: new Date().toISOString()
         };
-        
+
         lobbyChallenges.set(challengeId, challenge);
         broadcastLobbyUpdate();
-        
-        const targetName = challengeData.type === 'specific' ? 
-            lobbyPlayers.get(challengeData.targetPlayer)?.username || 'Unknown' : 
+
+        const targetName = challengeData.type === 'specific' ?
+            lobbyPlayers.get(challengeData.targetPlayer)?.username || 'Unknown' :
             'anyone';
-        
-        addSystemMessage(`${player.username} created a challenge against ${targetName}`);
+        const variantName = variant === 'standard' ? 'Standard Chess' : 'Fischer Random';
+
+        addSystemMessage(`${player.username} created a ${variantName} challenge against ${targetName}`);
     });
     
     socket.on('accept-challenge', (challengeId) => {
         const challenge = lobbyChallenges.get(challengeId);
         const player = lobbyPlayers.get(socket.id);
-        
+
         if (!challenge || !player || !player.username) {
             socket.emit('error', 'Challenge not found or no username set');
             return;
         }
-        
+
         // Create game with player names (challenger = white, accepter = black)
         const whiteName = challenge.challenger;
         const blackName = player.username;
+        const variant = challenge.variant || 'fischer';
         const gameId = generateGameId(whiteName, blackName);
-        const game = createGame(gameId, whiteName, blackName);
+        const game = createGame(gameId, whiteName, blackName, variant);
         games.set(gameId, game);
         saveGame(game);
-        console.log(`Game ${gameId} created and saved to disk`);
+        console.log(`Game ${gameId} (${variant}) created and saved to disk`);
 
         // Remove challenge
         lobbyChallenges.delete(challengeId);
@@ -951,6 +973,7 @@ io.on('connection', (socket) => {
                 gameId,
                 color: null,
                 spectator: true,
+                variant: game.variant || 'fischer',
                 board: game.board,
                 initialBoard: game.initialBoard,
                 castleRights: game.castleRights,
@@ -1025,6 +1048,7 @@ io.on('connection', (socket) => {
             gameId,
             color,
             spectator: false,
+            variant: game.variant || 'fischer',
             board: game.board,
             initialBoard: game.initialBoard,
             castleRights: game.castleRights,
@@ -1237,6 +1261,108 @@ io.on('connection', (socket) => {
         console.log(`Move made in game ${gameId}: ${from} to ${to}`);
         if (gameOver) {
             console.log(`Game ${gameId} ended: ${gameOver.type}${gameOver.winner ? ' - ' + gameOver.winner + ' wins' : ''}`);
+        }
+    });
+
+    // Resign from game
+    socket.on('resign', ({ gameId }) => {
+        const game = games.get(gameId);
+        if (!game || game.status !== 'active') {
+            socket.emit('error', 'Invalid game state');
+            return;
+        }
+
+        const player = game.players[socket.id];
+        if (!player) {
+            socket.emit('error', 'You are not a player in this game');
+            return;
+        }
+
+        // The opponent wins
+        const winner = player.color === 'white' ? 'black' : 'white';
+        game.status = 'finished';
+        game.result = winner;
+        saveGame(game);
+
+        io.to(gameId).emit('game-over', {
+            type: 'resignation',
+            winner: winner,
+            resignedBy: player.color
+        });
+
+        console.log(`Game ${gameId}: ${player.color} resigned, ${winner} wins`);
+    });
+
+    // Offer draw
+    socket.on('offer-draw', ({ gameId }) => {
+        const game = games.get(gameId);
+        if (!game || game.status !== 'active') {
+            socket.emit('error', 'Invalid game state');
+            return;
+        }
+
+        const player = game.players[socket.id];
+        if (!player) {
+            socket.emit('error', 'You are not a player in this game');
+            return;
+        }
+
+        // Store the draw offer on the game
+        game.drawOffer = player.color;
+
+        // Notify opponent
+        io.to(gameId).emit('draw-offered', {
+            offeredBy: player.color
+        });
+
+        console.log(`Game ${gameId}: ${player.color} offered a draw`);
+    });
+
+    // Respond to draw offer
+    socket.on('draw-response', ({ gameId, accept }) => {
+        const game = games.get(gameId);
+        if (!game || game.status !== 'active') {
+            socket.emit('error', 'Invalid game state');
+            return;
+        }
+
+        const player = game.players[socket.id];
+        if (!player) {
+            socket.emit('error', 'You are not a player in this game');
+            return;
+        }
+
+        // Only the opponent of whoever offered can respond
+        if (game.drawOffer === player.color) {
+            socket.emit('error', 'You cannot respond to your own draw offer');
+            return;
+        }
+
+        if (!game.drawOffer) {
+            socket.emit('error', 'No draw offer pending');
+            return;
+        }
+
+        if (accept) {
+            game.status = 'finished';
+            game.result = 'draw';
+            game.drawOffer = null;
+            saveGame(game);
+
+            io.to(gameId).emit('game-over', {
+                type: 'draw',
+                reason: 'agreement'
+            });
+
+            console.log(`Game ${gameId}: Draw by agreement`);
+        } else {
+            game.drawOffer = null;
+
+            io.to(gameId).emit('draw-declined', {
+                declinedBy: player.color
+            });
+
+            console.log(`Game ${gameId}: ${player.color} declined draw offer`);
         }
     });
 

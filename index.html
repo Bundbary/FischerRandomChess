@@ -45,33 +45,27 @@
         </div>
 
         <div class="side-panel">
-            <div class="panel-section">
-                <div class="panel-header" data-panel="controls">
-                    <h3>Game Controls</h3>
-                    <button class="panel-toggle">−</button>
-                </div>
-                <div class="panel-content" id="controls-content">
+            <details class="panel-section" open>
+                <summary class="panel-header">Game Controls</summary>
+                <div class="panel-content">
                     <div class="controls">
-                        <button id="new-game-btn">New Game</button>
-                        <button id="join-game-btn">Join Game</button>
+                        <button id="resign-btn" class="danger-btn" disabled>Resign</button>
+                        <button id="draw-btn" disabled>Offer Draw</button>
                     </div>
-                    <div id="game-link" class="game-link hidden">
-                        <label>Share this link:</label>
-                        <input type="text" id="game-url" readonly>
-                        <div class="link-buttons">
-                            <button id="copy-link-btn">Copy Link</button>
-                            <button id="open-link-btn">Open in New Tab</button>
-                        </div>
+                    <div class="controls">
+                        <button id="lobby-btn">Back to Lobby</button>
+                    </div>
+                    <div id="draw-offer-banner" class="draw-offer-banner hidden">
+                        <span>Draw offered!</span>
+                        <button id="accept-draw-btn" class="small-btn">Accept</button>
+                        <button id="decline-draw-btn" class="small-btn danger-btn">Decline</button>
                     </div>
                 </div>
-            </div>
+            </details>
 
-            <div class="panel-section">
-                <div class="panel-header" data-panel="theme">
-                    <h3>Board Theme</h3>
-                    <button class="panel-toggle">−</button>
-                </div>
-                <div class="panel-content" id="theme-content">
+            <details class="panel-section">
+                <summary class="panel-header">Board Theme</summary>
+                <div class="panel-content">
                     <div class="theme-picker">
                         <div class="color-picker-container">
                             <label for="board-color-picker">Board Color:</label>
@@ -84,7 +78,7 @@
                                 <button class="theme-preset" data-color="#8b5a8c" style="background: #8b5a8c" title="Purple"></button>
                                 <button class="theme-preset" data-color="#808080" style="background: #808080" title="Grey"></button>
                             </div>
-                            
+
                             <div class="contrast-control">
                                 <label for="contrast-slider">Contrast:</label>
                                 <div class="slider-container">
@@ -98,14 +92,11 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </details>
 
-            <div class="panel-section">
-                <div class="panel-header" data-panel="history">
-                    <h3>Move History</h3>
-                    <button class="panel-toggle">−</button>
-                </div>
-                <div class="panel-content" id="history-content">
+            <details class="panel-section" open>
+                <summary class="panel-header">Move History</summary>
+                <div class="panel-content">
                     <div id="move-history" class="move-history">
                         <div id="moves-list"></div>
                         <div class="history-nav">
@@ -116,14 +107,11 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </details>
 
-            <div class="panel-section">
-                <div class="panel-header" data-panel="chat">
-                    <h3>Game Chat</h3>
-                    <button class="panel-toggle">−</button>
-                </div>
-                <div class="panel-content" id="chat-content">
+            <details class="panel-section" open>
+                <summary class="panel-header">Game Chat</summary>
+                <div class="panel-content">
                     <div class="game-chat">
                         <div id="game-chat-messages" class="chat-messages"></div>
                         <div class="chat-input-container">
@@ -132,7 +120,7 @@
                         </div>
                     </div>
                 </div>
-            </div>
+            </details>
         </div>
     </div>
 

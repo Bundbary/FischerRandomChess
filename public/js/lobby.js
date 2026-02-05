@@ -192,7 +192,7 @@ class ChessLobby {
         
         this.socket.on('challenge-accepted', (data) => {
             // Open game in new window
-            window.open(`/?game=${data.gameId}`, '_blank');
+            window.location.href = `/?game=${data.gameId}`;
         });
         
         this.socket.on('error', (message) => {
@@ -231,7 +231,8 @@ class ChessLobby {
             infoDiv.className = 'game-info';
 
             const titleDiv = document.createElement('h4');
-            titleDiv.textContent = game.id;
+            const variantIcon = game.variant === 'standard' ? '♚' : '♔';
+            titleDiv.textContent = `${variantIcon} ${game.id}`;
 
             const detailsDiv = document.createElement('div');
             detailsDiv.className = 'game-details';
@@ -269,7 +270,7 @@ class ChessLobby {
             const resumeBtn = document.createElement('button');
             resumeBtn.className = 'resume-btn';
             resumeBtn.textContent = 'Resume';
-            resumeBtn.onclick = () => window.open(`/?game=${game.id}`, '_blank');
+            resumeBtn.onclick = () => window.location.href = `/?game=${game.id}`;
 
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'delete-btn';
@@ -293,17 +294,26 @@ class ChessLobby {
     setUsername() {
         const usernameInput = document.getElementById('username');
         const username = usernameInput.value.trim();
-        
+
         if (username.length < 2) {
             this.showError('Username must be at least 2 characters');
             return;
         }
-        
+
         if (username.length > 20) {
             this.showError('Username must be less than 20 characters');
             return;
         }
-        
+
+        // Check if username is already taken
+        const existingNames = document.querySelectorAll('#players-list .player-name');
+        for (const nameEl of existingNames) {
+            if (nameEl.textContent.toLowerCase() === username.toLowerCase()) {
+                this.showError('Username already taken');
+                return;
+            }
+        }
+
         this.username = username;
         localStorage.setItem('chess-username', username);
         this.socket.emit('set-username', username);
@@ -364,15 +374,16 @@ class ChessLobby {
     
     createChallenge() {
         const challengeType = document.querySelector('input[name="challenge-type"]:checked').value;
-        const targetPlayer = challengeType === 'specific' ? 
+        const variant = document.querySelector('input[name="challenge-variant"]:checked').value;
+        const targetPlayer = challengeType === 'specific' ?
             document.getElementById('challenge-player-select').value : null;
-        
+
         if (challengeType === 'specific' && !targetPlayer) {
             this.showError('Please select a player to challenge');
             return;
         }
-        
-        this.socket.emit('create-challenge', { type: challengeType, targetPlayer });
+
+        this.socket.emit('create-challenge', { type: challengeType, targetPlayer, variant });
         this.hideChallengeModal();
     }
     
@@ -501,7 +512,9 @@ class ChessLobby {
             
             const detailsDiv = document.createElement('div');
             detailsDiv.className = 'challenge-details';
-            detailsDiv.textContent = challenge.type === 'anyone' ? 'Open to anyone' : 'Private challenge';
+            const variantLabel = challenge.variant === 'standard' ? 'Standard' : 'Fischer Random';
+            const typeLabel = challenge.type === 'anyone' ? 'Open to anyone' : 'Private challenge';
+            detailsDiv.textContent = `${variantLabel} • ${typeLabel}`;
             
             infoDiv.appendChild(titleDiv);
             infoDiv.appendChild(detailsDiv);
@@ -535,7 +548,7 @@ class ChessLobby {
             infoDiv.className = 'game-info';
             
             const titleDiv = document.createElement('h4');
-            titleDiv.textContent = `Game ${gameId.slice(0, 8)}`;
+            titleDiv.textContent = gameId;
             
             const playersDiv = document.createElement('div');
             playersDiv.className = 'game-players';

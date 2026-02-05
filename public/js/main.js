@@ -23,26 +23,30 @@ class Game {
         this.checkUrlForGame();
         this.setupSocketListeners();
         this.loadSavedTheme();
-        this.loadPanelStates();
     }
     
     setupEventListeners() {
-        document.getElementById('new-game-btn').addEventListener('click', () => {
-            this.createGame();
+        // Game control buttons
+        document.getElementById('resign-btn').addEventListener('click', () => {
+            this.confirmResign();
         });
-        
-        document.getElementById('join-game-btn').addEventListener('click', () => {
-            this.showJoinGamePrompt();
+
+        document.getElementById('draw-btn').addEventListener('click', () => {
+            this.offerDraw();
         });
-        
-        document.getElementById('copy-link-btn').addEventListener('click', () => {
-            this.copyGameLink();
+
+        document.getElementById('lobby-btn').addEventListener('click', () => {
+            window.location.href = '/';
         });
-        
-        document.getElementById('open-link-btn').addEventListener('click', () => {
-            this.openGameLink();
+
+        document.getElementById('accept-draw-btn').addEventListener('click', () => {
+            this.respondToDraw(true);
         });
-        
+
+        document.getElementById('decline-draw-btn').addEventListener('click', () => {
+            this.respondToDraw(false);
+        });
+
         document.getElementById('help-btn').addEventListener('click', () => {
             this.showHelp();
         });
@@ -88,12 +92,7 @@ class Game {
             this.updateBoardContrast(parseInt(e.target.value));
         });
         
-        // Panel toggle functionality
-        document.querySelectorAll('.panel-header').forEach(header => {
-            header.addEventListener('click', () => {
-                this.togglePanel(header.dataset.panel);
-            });
-        });
+        // Panel toggle handled natively by details/summary elements
 
         // Game chat functionality
         document.getElementById('send-game-chat-btn').addEventListener('click', () => {
@@ -144,21 +143,17 @@ class Game {
             }
         });
 
-        this.socket.on('game-created', (data) => {
-            this.gameId = data.gameId;
-            this.playerColor = data.color;
-            this.board.setPlayerColor(data.color); // Set board orientation
-            this.board.castleRights = data.castleRights || null;
-            this.board.setupBoard(data.board);
-            this.updateGameStatus('Waiting for opponent...');
-            this.showGameLink(data.gameUrl);
-        });
-        
         this.socket.on('game-joined', (data) => {
             this.gameId = data.gameId;
             this.playerColor = data.color;
             this.currentTurn = data.currentTurn || 'white';
             this.isSpectator = data.spectator || false;
+
+            // Update page title to show variant
+            const variant = data.variant || 'fischer';
+            const variantName = variant === 'standard' ? 'Standard Chess' : 'Fischer Random Chess';
+            document.querySelector('header h1').textContent = `♔ ${variantName}`;
+            document.title = variantName;
 
             // Store history data for navigation
             this.initialBoard = data.initialBoard;
@@ -169,6 +164,13 @@ class Game {
             this.board.setPlayerColor(data.color || 'white');
             this.board.castleRights = data.castleRights || null;
             this.board.enPassantTarget = data.enPassantTarget || null;
+
+            // Set last move highlight if game has moves
+            if (this.moves.length > 0) {
+                const lastMove = this.moves[this.moves.length - 1];
+                this.board.setLastMove(lastMove.from, lastMove.to);
+            }
+
             this.board.setupBoard(data.board);
 
             // Restore move history if rejoining
@@ -186,6 +188,7 @@ class Game {
             if (this.isSpectator) {
                 this.updateGameStatus(`Spectating - ${data.currentTurn}'s turn`);
                 this.board.setInteractive(false);
+                this.disableGameControls();
                 // Show player names for spectators
                 if (data.players) {
                     this.updateSpectatorPlayerInfo(data.players);
@@ -204,10 +207,12 @@ class Game {
                 }
                 this.updateGameStatus(statusMessage);
                 this.board.setInteractive(false);
+                this.disableGameControls();
             } else {
                 const isMyTurn = this.currentTurn === this.playerColor;
                 this.updateGameStatus(isMyTurn ? 'Your turn!' : "Waiting for opponent...");
                 this.board.setInteractive(isMyTurn);
+                this.enableGameControls();
             }
         });
         
@@ -227,6 +232,12 @@ class Game {
             // Always return to live position when a new move is made
             this.viewingMoveIndex = -1;
             document.body.classList.remove('viewing-history');
+
+            // Set last move highlight
+            if (this.moves.length > 0) {
+                const lastMove = this.moves[this.moves.length - 1];
+                this.board.setLastMove(lastMove.from, lastMove.to);
+            }
 
             this.board.setupBoard(data.board);
             this.currentTurn = data.currentTurn;
@@ -301,6 +312,47 @@ class Game {
         this.socket.on('game-chat-message', (data) => {
             this.addChatMessage(data);
         });
+
+        // Game over (resignation, draw)
+        this.socket.on('game-over', (data) => {
+            let statusMessage;
+            if (data.type === 'resignation') {
+                if (this.isSpectator) {
+                    statusMessage = `${data.winner} wins by resignation!`;
+                } else {
+                    const iWon = data.winner === this.playerColor;
+                    statusMessage = iWon ? 'You win! Opponent resigned.' : 'You resigned. Game over.';
+                }
+            } else if (data.type === 'draw') {
+                statusMessage = 'Game drawn by agreement.';
+            }
+            this.updateGameStatus(statusMessage);
+            this.board.setInteractive(false);
+            this.disableGameControls();
+        });
+
+        // Draw offer received
+        this.socket.on('draw-offered', (data) => {
+            if (data.offeredBy !== this.playerColor) {
+                // Show the draw offer banner
+                document.getElementById('draw-offer-banner').classList.remove('hidden');
+                document.getElementById('draw-btn').disabled = true;
+            } else {
+                // We offered, disable the button
+                document.getElementById('draw-btn').disabled = true;
+                document.getElementById('draw-btn').textContent = 'Draw Offered...';
+            }
+        });
+
+        // Draw declined
+        this.socket.on('draw-declined', (data) => {
+            document.getElementById('draw-offer-banner').classList.add('hidden');
+            document.getElementById('draw-btn').disabled = false;
+            document.getElementById('draw-btn').textContent = 'Offer Draw';
+            if (data.declinedBy !== this.playerColor) {
+                this.showModal('Draw offer declined.');
+            }
+        });
     }
     
     checkUrlForGame() {
@@ -312,28 +364,40 @@ class Game {
         }
     }
     
-    createGame() {
-        this.socket.emit('create-game');
-        document.getElementById('new-game-btn').disabled = true;
-        document.getElementById('join-game-btn').disabled = true;
-    }
-    
     joinGame(gameId, spectate = false) {
         this.isSpectator = spectate;
         const username = localStorage.getItem('chess-username') || '';
         this.socket.emit('join-game', { gameId, username, spectate });
-        document.getElementById('new-game-btn').disabled = true;
-        document.getElementById('join-game-btn').disabled = true;
     }
-    
-    showJoinGamePrompt() {
-        this.showModal('Enter game ID:', { prompt: true }).then(gameId => {
-            if (gameId) {
-                this.joinGame(gameId);
+
+    enableGameControls() {
+        document.getElementById('resign-btn').disabled = false;
+        document.getElementById('draw-btn').disabled = false;
+    }
+
+    disableGameControls() {
+        document.getElementById('resign-btn').disabled = true;
+        document.getElementById('draw-btn').disabled = true;
+        document.getElementById('draw-offer-banner').classList.add('hidden');
+    }
+
+    confirmResign() {
+        this.showModal('Are you sure you want to resign?', { prompt: false }).then(confirmed => {
+            if (confirmed) {
+                this.socket.emit('resign', { gameId: this.gameId });
             }
         });
     }
-    
+
+    offerDraw() {
+        this.socket.emit('offer-draw', { gameId: this.gameId });
+    }
+
+    respondToDraw(accept) {
+        document.getElementById('draw-offer-banner').classList.add('hidden');
+        this.socket.emit('draw-response', { gameId: this.gameId, accept });
+    }
+
     makeMove(from, to) {
         if (this.playerColor !== this.currentTurn) {
             return false;
@@ -495,52 +559,6 @@ class Game {
         }
     }
     
-    togglePanel(panelName) {
-        const content = document.getElementById(panelName + '-content');
-        const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);
-        
-        if (content.classList.contains('collapsed')) {
-            // Expand panel
-            content.classList.remove('collapsed');
-            content.style.maxHeight = content.scrollHeight + 'px';
-            toggle.textContent = '−';
-        } else {
-            // Collapse panel
-            content.classList.add('collapsed');
-            content.style.maxHeight = '0px';
-            toggle.textContent = '+';
-        }
-        
-        // Save panel state
-        localStorage.setItem(`chess-panel-${panelName}`, content.classList.contains('collapsed') ? 'collapsed' : 'expanded');
-    }
-    
-    recalculatePanelHeight(panelName) {
-        const content = document.getElementById(panelName + '-content');
-        
-        // Only recalculate if panel is not collapsed
-        if (!content.classList.contains('collapsed')) {
-            content.style.maxHeight = content.scrollHeight + 'px';
-        }
-    }
-    
-    loadPanelStates() {
-        ['controls', 'theme', 'history', 'chat'].forEach(panelName => {
-            const state = localStorage.getItem(`chess-panel-${panelName}`);
-            const content = document.getElementById(panelName + '-content');
-            const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);
-            
-            if (state === 'collapsed') {
-                content.classList.add('collapsed');
-                content.style.maxHeight = '0px';
-                toggle.textContent = '+';
-            } else {
-                content.style.maxHeight = content.scrollHeight + 'px';
-                toggle.textContent = '−';
-            }
-        });
-    }
-    
     updatePlayerInfo(players) {
         // Clear both player displays first
         const blackElement = document.getElementById('player-black');
@@ -616,55 +634,6 @@ class Game {
         }
     }
 
-    showGameLink(gameUrl) {
-        const gameLinkDiv = document.getElementById('game-link');
-        const gameUrlInput = document.getElementById('game-url');
-        
-        gameUrlInput.value = gameUrl;
-        gameLinkDiv.classList.remove('hidden');
-        
-        // Recalculate panel height after DOM update
-        setTimeout(() => {
-            this.recalculatePanelHeight('controls');
-        }, 10);
-    }
-    
-    copyGameLink() {
-        const gameUrlInput = document.getElementById('game-url');
-        gameUrlInput.select();
-        document.execCommand('copy');
-        
-        const copyBtn = document.getElementById('copy-link-btn');
-        const originalText = copyBtn.textContent;
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => {
-            copyBtn.textContent = originalText;
-        }, 2000);
-    }
-    
-    openGameLink() {
-        const gameUrlInput = document.getElementById('game-url');
-        const gameUrl = gameUrlInput.value;
-
-        if (gameUrl) {
-            const newWindow = window.open(gameUrl, '_blank');
-
-            // Check if popup was blocked
-            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                this.showModal('Popup blocked! Please allow popups for this site, or copy the link and paste it in a new tab.');
-                return;
-            }
-
-            // Visual feedback
-            const openBtn = document.getElementById('open-link-btn');
-            const originalText = openBtn.textContent;
-            openBtn.textContent = 'Opened!';
-            setTimeout(() => {
-                openBtn.textContent = originalText;
-            }, 2000);
-        }
-    }
-    
     showHelp() {
         document.getElementById('help-modal').classList.remove('hidden');
     }
@@ -745,9 +714,6 @@ class Game {
 
         messagesContainer.appendChild(messageEl);
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
-
-        // Recalculate panel height if needed
-        this.recalculatePanelHeight('chat');
     }
 
     loadChatHistory(messages) {
@@ -822,6 +788,15 @@ class Game {
         }
 
         this.viewingMoveIndex = moveIndex;
+
+        // Set last move highlight for the position being viewed
+        if (moveIndex > 0) {
+            const move = this.moves[moveIndex - 1];
+            this.board.setLastMove(move.from, move.to);
+        } else {
+            this.board.setLastMove(null, null); // No last move at initial position
+        }
+
         const board = this.reconstructBoardAtMove(moveIndex);
         this.board.setupBoard(board);
         this.board.setInteractive(false); // Can't move while viewing history
@@ -854,6 +829,14 @@ class Game {
     navigateToLive() {
         this.viewingMoveIndex = -1;
         document.body.classList.remove('viewing-history');
+
+        // Set last move highlight for live position
+        if (this.moves.length > 0) {
+            const lastMove = this.moves[this.moves.length - 1];
+            this.board.setLastMove(lastMove.from, lastMove.to);
+        } else {
+            this.board.setLastMove(null, null);
+        }
 
         // Restore live board state by reconstructing from all moves
         if (this.initialBoard) {
