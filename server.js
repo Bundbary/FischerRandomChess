@@ -35,6 +35,21 @@ const lobbyPlayers = new Map(); // socketId -> { username, status, socketId }
 const lobbyChallenges = new Map(); // challengeId -> { challenger, type, targetPlayer, challengerId }
 const lobbyChatHistory = [];
 
+// HTML escape to prevent XSS
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// Validate chess square notation
+function isValidSquareNotation(square) {
+    return typeof square === 'string' && /^[a-h][1-8]$/.test(square);
+}
+
 // Server-side move validation (simplified version of client logic)
 function isValidMove(board, from, to, piece) {
     const possibleMoves = calculatePossibleMoves(board, from, piece);
@@ -234,6 +249,96 @@ function isValidMoveEnhanced(board, from, to, piece, enPassantTarget = null) {
     return !wouldMoveLeaveKingInCheck(board, from, to, piece.color);
 }
 
+// Check if the given color has any legal moves
+function hasLegalMoves(board, color, enPassantTarget, castleRights) {
+    for (const [square, piece] of Object.entries(board)) {
+        if (piece && piece.color === color) {
+            const moves = calculatePossibleMoves(board, square, piece, enPassantTarget);
+            // Add castling moves for king
+            if (piece.piece === 'k' && castleRights) {
+                const castlingMoves = getCastlingMoves(board, square, color, castleRights);
+                moves.push(...castlingMoves);
+            }
+            for (const to of moves) {
+                if (!wouldMoveLeaveKingInCheck(board, square, to, color)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// Get available castling destination squares for the king
+function getCastlingMoves(board, kingSquare, color, castleRights) {
+    const moves = [];
+    const rank = color === 'white' ? 1 : 8;
+    const rights = castleRights[color];
+
+    if (!rights || isKingInCheck(board, color)) return moves;
+
+    // Kingside
+    if (rights.kingsideRook) {
+        const rookSquare = rights.kingsideRook;
+        if (board[rookSquare] && board[rookSquare].piece === 'r' && board[rookSquare].color === color) {
+            if (isCastlingPathClear(board, kingSquare, rookSquare, 'g' + rank, 'f' + rank) &&
+                !wouldPassThroughCheck(board, kingSquare, 'g' + rank, color)) {
+                moves.push('g' + rank);
+            }
+        }
+    }
+
+    // Queenside
+    if (rights.queensideRook) {
+        const rookSquare = rights.queensideRook;
+        if (board[rookSquare] && board[rookSquare].piece === 'r' && board[rookSquare].color === color) {
+            if (isCastlingPathClear(board, kingSquare, rookSquare, 'c' + rank, 'd' + rank) &&
+                !wouldPassThroughCheck(board, kingSquare, 'c' + rank, color)) {
+                moves.push('c' + rank);
+            }
+        }
+    }
+
+    return moves;
+}
+
+// Check if squares between king and rook (and destination squares) are clear
+function isCastlingPathClear(board, kingSquare, rookSquare, kingDest, rookDest) {
+    const rank = kingSquare[1];
+    const kingFile = kingSquare.charCodeAt(0) - 97;
+    const rookFile = rookSquare.charCodeAt(0) - 97;
+    const kingDestFile = kingDest.charCodeAt(0) - 97;
+    const rookDestFile = rookDest.charCodeAt(0) - 97;
+
+    // All squares the king and rook will travel through or land on must be empty
+    // (except for the king and rook themselves)
+    const minFile = Math.min(kingFile, rookFile, kingDestFile, rookDestFile);
+    const maxFile = Math.max(kingFile, rookFile, kingDestFile, rookDestFile);
+
+    for (let f = minFile; f <= maxFile; f++) {
+        const sq = String.fromCharCode(97 + f) + rank;
+        if (sq === kingSquare || sq === rookSquare) continue;
+        if (board[sq]) return false;
+    }
+    return true;
+}
+
+// Check if king would pass through check during castling
+function wouldPassThroughCheck(board, kingSquare, kingDest, color) {
+    const rank = parseInt(kingSquare[1]);
+    const fromFile = kingSquare.charCodeAt(0) - 97;
+    const toFile = kingDest.charCodeAt(0) - 97;
+    const step = fromFile < toFile ? 1 : -1;
+
+    for (let f = fromFile; f !== toFile + step; f += step) {
+        const sq = String.fromCharCode(97 + f) + rank;
+        if (isSquareUnderAttack(board, sq, color)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function isCastlingMove(from, to) {
     const rank = parseInt(from[1]);
     const startRank = from[1] === '1' ? 1 : 8;
@@ -260,10 +365,13 @@ function executeCastling(board, from, to, color) {
         
         if (kingsideRook) {
             // Move king to g-file, rook to f-file
-            board['g' + rank] = piece;
-            board['f' + rank] = board[kingsideRook];
+            const rookDest = 'f' + rank;
+            const kingDest = 'g' + rank;
+            const rookPiece = board[kingsideRook];
             delete board[from];
             delete board[kingsideRook];
+            board[kingDest] = piece;
+            board[rookDest] = rookPiece;
         }
     } else if (to[0] === 'c') {
         // Queenside castling
@@ -280,10 +388,13 @@ function executeCastling(board, from, to, color) {
         
         if (queensideRook) {
             // Move king to c-file, rook to d-file
-            board['c' + rank] = piece;
-            board['d' + rank] = board[queensideRook];
+            const rookDest = 'd' + rank;
+            const kingDest = 'c' + rank;
+            const rookPiece = board[queensideRook];
             delete board[from];
             delete board[queensideRook];
+            board[kingDest] = piece;
+            board[rookDest] = rookPiece;
         }
     }
 }
@@ -373,7 +484,24 @@ function generateFischerRandomPosition() {
 // Create initial game state
 function createGame(gameId) {
     const backRank = generateFischerRandomPosition();
-    
+
+    // Find rook and king positions for castle rights
+    let kingFile = null;
+    let leftRookFile = null;
+    let rightRookFile = null;
+    for (let i = 0; i < 8; i++) {
+        if (backRank[i] === 'K') kingFile = i;
+        if (backRank[i] === 'R') {
+            if (leftRookFile === null) leftRookFile = i;
+            else rightRookFile = i;
+        }
+    }
+
+    const leftRookSquareW = String.fromCharCode(97 + leftRookFile) + '1';
+    const rightRookSquareW = String.fromCharCode(97 + rightRookFile) + '1';
+    const leftRookSquareB = String.fromCharCode(97 + leftRookFile) + '8';
+    const rightRookSquareB = String.fromCharCode(97 + rightRookFile) + '8';
+
     const game = {
         id: gameId,
         players: {},
@@ -381,9 +509,14 @@ function createGame(gameId) {
         board: createInitialBoard(backRank),
         moves: [],
         status: 'waiting', // waiting, active, finished
-        enPassantTarget: null // Track en passant target square
+        enPassantTarget: null, // Track en passant target square
+        castleRights: {
+            white: { queensideRook: leftRookSquareW, kingsideRook: rightRookSquareW },
+            black: { queensideRook: leftRookSquareB, kingsideRook: rightRookSquareB }
+        },
+        result: null // null, 'white', 'black', 'draw'
     };
-    
+
     return game;
 }
 
@@ -470,7 +603,7 @@ io.on('connection', (socket) => {
         const player = lobbyPlayers.get(socket.id);
         if (player) {
             const oldUsername = player.username;
-            player.username = username.trim().substring(0, 20);
+            player.username = escapeHtml(username.trim().substring(0, 20));
             
             if (oldUsername) {
                 addSystemMessage(`${oldUsername} is now known as ${player.username}`);
@@ -488,7 +621,7 @@ io.on('connection', (socket) => {
             const chatMessage = {
                 type: 'user',
                 username: player.username,
-                message: message.trim().substring(0, 200),
+                message: escapeHtml(message.trim().substring(0, 200)),
                 timestamp: new Date().toISOString()
             };
             
@@ -538,30 +671,18 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Create game
+        // Create game (players will join when they open the game page)
         const gameId = generateGameId();
         const game = createGame(gameId);
+        // Store intended player names so join-game can assign colors correctly
+        game.challengerName = challenge.challenger;
+        game.accepterName = player.username;
         games.set(gameId, game);
-        
-        // Set up players
-        game.players[challenge.challengerId] = {
-            color: 'white',
-            id: challenge.challengerId,
-            name: challenge.challenger
-        };
-        
-        game.players[socket.id] = {
-            color: 'black',
-            id: socket.id,
-            name: player.username
-        };
-        
-        game.status = 'active';
-        
+
         // Remove challenge
         lobbyChallenges.delete(challengeId);
-        
-        // Notify players
+
+        // Notify both players to open the game page
         const challengerSocket = io.sockets.sockets.get(challenge.challengerId);
         if (challengerSocket) {
             challengerSocket.emit('challenge-accepted', { gameId });
@@ -604,10 +725,11 @@ io.on('connection', (socket) => {
             name: 'White Player'
         };
         
-        socket.emit('game-created', { 
-            gameId, 
+        socket.emit('game-created', {
+            gameId,
             color: 'white',
             board: game.board,
+            castleRights: game.castleRights,
             gameUrl: `${process.env.BASE_URL || 'http://localhost:3000'}/?game=${gameId}`
         });
         
@@ -628,20 +750,31 @@ io.on('connection', (socket) => {
         }
         
         socket.join(gameId);
-        game.players[socket.id] = { 
-            color: 'black', 
-            id: socket.id,
-            name: 'Black Player'
-        };
-        
+
+        // Determine color and name based on join order
+        const playerCount = Object.keys(game.players).length;
+        let color, name;
+        if (playerCount === 0) {
+            // First player is white (challenger in challenge games)
+            color = 'white';
+            name = game.challengerName || 'White Player';
+        } else {
+            // Second player is black (accepter in challenge games)
+            color = 'black';
+            name = game.accepterName || 'Black Player';
+        }
+
+        game.players[socket.id] = { color, id: socket.id, name };
+
         if (Object.keys(game.players).length === 2) {
             game.status = 'active';
         }
-        
-        socket.emit('game-joined', { 
-            gameId, 
-            color: 'black',
-            board: game.board
+
+        socket.emit('game-joined', {
+            gameId,
+            color,
+            board: game.board,
+            castleRights: game.castleRights
         });
         
         // Notify all players in the game
@@ -655,34 +788,50 @@ io.on('connection', (socket) => {
     });
 
     socket.on('make-move', ({ gameId, from, to }) => {
+        // Input validation
+        if (!isValidSquareNotation(from) || !isValidSquareNotation(to)) {
+            socket.emit('error', 'Invalid move coordinates');
+            return;
+        }
+
         const game = games.get(gameId);
-        
+
         if (!game || game.status !== 'active') {
             socket.emit('error', 'Invalid game state');
             return;
         }
-        
+
         const player = game.players[socket.id];
         if (!player || player.color !== game.currentTurn) {
             socket.emit('error', 'Not your turn');
             return;
         }
-        
+
         // Basic move validation
         const piece = game.board[from];
         if (!piece || piece.color !== player.color) {
             socket.emit('error', 'Invalid piece selection');
             return;
         }
-        
-        // Check if move is legal using enhanced validation (includes check detection)
-        if (!isValidMoveEnhanced(game.board, from, to, piece, game.enPassantTarget)) {
-            socket.emit('error', 'Illegal move - cannot leave king in check');
-            return;
+
+        // Castling move: validate with castle rights
+        const isCastle = piece.piece === 'k' && isCastlingMove(from, to);
+        if (isCastle) {
+            const castlingMoves = getCastlingMoves(game.board, from, piece.color, game.castleRights);
+            if (!castlingMoves.includes(to)) {
+                socket.emit('error', 'Illegal castling move');
+                return;
+            }
+        } else {
+            // Check if move is legal using enhanced validation (includes check detection)
+            if (!isValidMoveEnhanced(game.board, from, to, piece, game.enPassantTarget)) {
+                socket.emit('error', 'Illegal move');
+                return;
+            }
         }
-        
-        // Check if this is a special move
-        if (piece.piece === 'k' && isCastlingMove(from, to)) {
+
+        // Execute the move
+        if (isCastle) {
             executeCastling(game.board, from, to, piece.color);
         } else if (piece.piece === 'p' && isEnPassantMove(from, to, game.enPassantTarget)) {
             executeEnPassant(game.board, from, to, piece.color);
@@ -691,16 +840,60 @@ io.on('connection', (socket) => {
             game.board[to] = game.board[from];
             delete game.board[from];
         }
-        
+
+        // Pawn promotion (auto-queen)
+        if (piece.piece === 'p') {
+            const destRank = parseInt(to[1]);
+            if ((piece.color === 'white' && destRank === 8) || (piece.color === 'black' && destRank === 1)) {
+                game.board[to] = { piece: 'q', color: piece.color };
+            }
+        }
+
+        // Update castle rights
+        // King moved - lose both castling rights
+        if (piece.piece === 'k') {
+            game.castleRights[piece.color] = { queensideRook: null, kingsideRook: null };
+        }
+        // Rook moved or captured - lose that side's castling right
+        for (const color of ['white', 'black']) {
+            const rights = game.castleRights[color];
+            if (rights.queensideRook && (rights.queensideRook === from || rights.queensideRook === to)) {
+                rights.queensideRook = null;
+            }
+            if (rights.kingsideRook && (rights.kingsideRook === from || rights.kingsideRook === to)) {
+                rights.kingsideRook = null;
+            }
+        }
+
         // Update en passant target
         updateEnPassantTarget(game, from, to, piece);
-        
+
         // Add move to history
         game.moves.push({ from, to, piece: piece.piece, color: piece.color });
-        
+
         // Switch turns
         game.currentTurn = game.currentTurn === 'white' ? 'black' : 'white';
-        
+
+        // Check for checkmate or stalemate
+        const opponentColor = game.currentTurn;
+        const inCheck = isKingInCheck(game.board, opponentColor);
+        const hasLegal = hasLegalMoves(game.board, opponentColor, game.enPassantTarget, game.castleRights);
+
+        let gameOver = null;
+        if (!hasLegal) {
+            if (inCheck) {
+                // Checkmate
+                game.status = 'finished';
+                game.result = piece.color; // the player who just moved wins
+                gameOver = { type: 'checkmate', winner: piece.color };
+            } else {
+                // Stalemate
+                game.status = 'finished';
+                game.result = 'draw';
+                gameOver = { type: 'stalemate' };
+            }
+        }
+
         // Notify all players
         io.to(gameId).emit('move-made', {
             from,
@@ -708,10 +901,16 @@ io.on('connection', (socket) => {
             board: game.board,
             currentTurn: game.currentTurn,
             moves: game.moves,
-            enPassantTarget: game.enPassantTarget
+            enPassantTarget: game.enPassantTarget,
+            castleRights: game.castleRights,
+            inCheck,
+            gameOver
         });
-        
+
         console.log(`Move made in game ${gameId}: ${from} to ${to}`);
+        if (gameOver) {
+            console.log(`Game ${gameId} ended: ${gameOver.type}${gameOver.winner ? ' - ' + gameOver.winner + ' wins' : ''}`);
+        }
     });
 
     socket.on('disconnect', () => {
