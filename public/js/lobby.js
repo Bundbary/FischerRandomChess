@@ -32,6 +32,38 @@ class ChessLobby {
         this.setupEventListeners();
         this.setupSocketListeners();
         this.loadPanelStates();
+        this.loadSavedUsername();
+    }
+
+    loadSavedUsername() {
+        const savedUsername = localStorage.getItem('chess-username');
+        if (savedUsername) {
+            const usernameInput = document.getElementById('username');
+            usernameInput.value = savedUsername;
+            // Don't call setUsername() here - wait for socket connection
+            // The connect handler will call registerUsernameWithServer()
+        }
+    }
+
+    registerUsernameWithServer() {
+        const savedUsername = localStorage.getItem('chess-username');
+        if (savedUsername && this.socket.connected) {
+            this.username = savedUsername;
+            this.socket.emit('set-username', savedUsername);
+            this.socket.emit('get-my-games', savedUsername);
+
+            // Update UI to show username is set
+            const usernameInput = document.getElementById('username');
+            usernameInput.disabled = true;
+            document.getElementById('set-username-btn').textContent = 'Change';
+            document.getElementById('set-username-btn').onclick = () => {
+                usernameInput.disabled = false;
+                usernameInput.focus();
+                document.getElementById('set-username-btn').textContent = 'Set Name';
+                document.getElementById('set-username-btn').onclick = () => this.setUsername();
+            };
+            console.log('Username registered with server:', savedUsername);
+        }
     }
     
     setupEventListeners() {
@@ -134,6 +166,8 @@ class ChessLobby {
     setupSocketListeners() {
         this.socket.on('connect', () => {
             console.log('Connected to lobby');
+            // Re-register username with server after reconnection
+            this.registerUsernameWithServer();
         });
         
         this.socket.on('players-update', (players) => {
@@ -164,6 +198,96 @@ class ChessLobby {
         this.socket.on('error', (message) => {
             this.showError(message);
         });
+
+        this.socket.on('my-games', (games) => {
+            this.updateMyGamesList(games);
+        });
+
+        this.socket.on('game-deleted', (data) => {
+            this.addChatMessage({
+                type: 'system',
+                message: `Game ${data.gameId} deleted`
+            });
+            // Refresh my games list
+            this.socket.emit('get-my-games', this.username);
+        });
+    }
+
+    updateMyGamesList(games) {
+        const container = document.getElementById('my-games-list');
+        if (!container) return;
+
+        if (games.length === 0) {
+            container.innerHTML = '<div class="no-games">No games</div>';
+            return;
+        }
+
+        container.innerHTML = '';
+        games.forEach(game => {
+            const gameDiv = document.createElement('div');
+            gameDiv.className = 'game-item my-game';
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'game-info';
+
+            const titleDiv = document.createElement('h4');
+            titleDiv.textContent = game.id;
+
+            const detailsDiv = document.createElement('div');
+            detailsDiv.className = 'game-details';
+            const myColor = game.white === this.username ? 'white' : 'black';
+            const opponentName = myColor === 'white' ? game.black : game.white;
+
+            let statusText;
+            if (game.status === 'finished') {
+                if (game.result === 'draw') {
+                    statusText = 'Draw';
+                } else if (game.result === myColor) {
+                    statusText = 'You won!';
+                } else {
+                    statusText = 'You lost';
+                }
+            } else if (game.status === 'waiting') {
+                statusText = 'Waiting...';
+            } else {
+                const isMyTurn = game.currentTurn === myColor;
+                statusText = isMyTurn ? 'Your turn!' : "Opponent's turn";
+            }
+
+            const isMyTurn = game.status === 'active' && game.currentTurn === myColor;
+            detailsDiv.innerHTML = `
+                <span>vs ${opponentName || 'waiting...'}</span>
+                <span class="turn-status ${isMyTurn ? 'my-turn' : ''} ${game.status === 'finished' ? 'finished' : ''}">${statusText}</span>
+            `;
+
+            infoDiv.appendChild(titleDiv);
+            infoDiv.appendChild(detailsDiv);
+
+            const buttonsDiv = document.createElement('div');
+            buttonsDiv.className = 'game-buttons';
+
+            const resumeBtn = document.createElement('button');
+            resumeBtn.className = 'resume-btn';
+            resumeBtn.textContent = 'Resume';
+            resumeBtn.onclick = () => window.open(`/?game=${game.id}`, '_blank');
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'delete-btn';
+            deleteBtn.textContent = '×';
+            deleteBtn.title = 'Delete game';
+            deleteBtn.onclick = () => this.deleteGame(game.id);
+
+            buttonsDiv.appendChild(resumeBtn);
+            buttonsDiv.appendChild(deleteBtn);
+
+            gameDiv.appendChild(infoDiv);
+            gameDiv.appendChild(buttonsDiv);
+            container.appendChild(gameDiv);
+        });
+    }
+
+    deleteGame(gameId) {
+        this.socket.emit('delete-game', gameId);
     }
     
     setUsername() {
@@ -181,7 +305,11 @@ class ChessLobby {
         }
         
         this.username = username;
+        localStorage.setItem('chess-username', username);
         this.socket.emit('set-username', username);
+
+        // Request user's existing games
+        this.socket.emit('get-my-games', username);
         
         // Update UI
         usernameInput.disabled = true;
@@ -486,7 +614,7 @@ class ChessLobby {
     }
     
     loadPanelStates() {
-        ['players', 'challenges', 'chat', 'games'].forEach(panelName => {
+        ['players', 'challenges', 'mygames', 'chat', 'games'].forEach(panelName => {
             const state = localStorage.getItem(`chess-lobby-panel-${panelName}`);
             const content = document.getElementById(panelName + '-content');
             const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);

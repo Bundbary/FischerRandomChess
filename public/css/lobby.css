@@ -445,6 +445,64 @@ header h1 {
     background: var(--primary-hover);
 }
 
+/* My Games */
+.my-games-list {
+    padding: 16px;
+}
+
+.my-game .game-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.my-game .turn-status {
+    font-size: 10px;
+    color: var(--text-muted);
+}
+
+.my-game .turn-status.my-turn {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.resume-btn {
+    padding: 6px 12px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.resume-btn:hover {
+    background: var(--primary-hover);
+}
+
+.game-buttons {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.delete-btn {
+    padding: 4px 8px;
+    background: #a04747;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.delete-btn:hover {
+    background: #c55050;
+}
+
 /* Active Games */
 .active-games-list {
     padding: 16px;

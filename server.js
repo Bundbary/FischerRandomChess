@@ -2,6 +2,10 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const fs = require('fs');
+
+// Games persistence folder
+const GAMES_DIR = path.join(__dirname, 'games');
 
 const app = express();
 const server = http.createServer(app);
@@ -34,6 +38,123 @@ const games = new Map();
 const lobbyPlayers = new Map(); // socketId -> { username, status, socketId }
 const lobbyChallenges = new Map(); // challengeId -> { challenger, type, targetPlayer, challengerId }
 const lobbyChatHistory = [];
+
+// ============ Game Persistence Functions ============
+
+// Ensure games directory exists
+function ensureGamesDir() {
+    if (!fs.existsSync(GAMES_DIR)) {
+        fs.mkdirSync(GAMES_DIR, { recursive: true });
+        console.log('Created games directory:', GAMES_DIR);
+    }
+}
+
+// Generate game ID from player names (White_Black)
+function generateGameId(whiteName, blackName) {
+    const baseId = `${whiteName}_${blackName}`;
+
+    // Check if this game ID already exists, if so add a number
+    let gameId = baseId;
+    let counter = 2;
+
+    while (fs.existsSync(path.join(GAMES_DIR, gameId))) {
+        gameId = `${baseId}_${counter}`;
+        counter++;
+    }
+
+    return gameId;
+}
+
+// Save game to disk
+function saveGame(game) {
+    const gameDir = path.join(GAMES_DIR, game.id);
+
+    // Create game folder if it doesn't exist
+    if (!fs.existsSync(gameDir)) {
+        fs.mkdirSync(gameDir, { recursive: true });
+    }
+
+    // Update timestamp
+    game.updatedAt = new Date().toISOString();
+
+    // Save game.json
+    const gamePath = path.join(gameDir, 'game.json');
+    fs.writeFileSync(gamePath, JSON.stringify(game, null, 2));
+}
+
+// Load a single game from disk
+function loadGame(gameId) {
+    const gamePath = path.join(GAMES_DIR, gameId, 'game.json');
+
+    if (fs.existsSync(gamePath)) {
+        const data = fs.readFileSync(gamePath, 'utf-8');
+        return JSON.parse(data);
+    }
+
+    return null;
+}
+
+// Load all games from disk on startup
+function loadAllGames() {
+    ensureGamesDir();
+
+    const gameFolders = fs.readdirSync(GAMES_DIR, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+
+    let loaded = 0;
+    for (const gameId of gameFolders) {
+        const game = loadGame(gameId);
+        if (game) {
+            // Reset connected players (they'll reconnect)
+            game.players = {};
+            games.set(gameId, game);
+            loaded++;
+        }
+    }
+
+    console.log(`Loaded ${loaded} games from disk`);
+}
+
+// Delete a game from disk
+function deleteGame(gameId) {
+    const gameDir = path.join(GAMES_DIR, gameId);
+    if (fs.existsSync(gameDir)) {
+        // Remove game.json and the folder
+        const gamePath = path.join(gameDir, 'game.json');
+        if (fs.existsSync(gamePath)) {
+            fs.unlinkSync(gamePath);
+        }
+        fs.rmdirSync(gameDir);
+        console.log(`Deleted game: ${gameId}`);
+        return true;
+    }
+    return false;
+}
+
+// Get games for a specific username
+function getGamesForUser(username) {
+    const userGames = [];
+
+    for (const [gameId, game] of games.entries()) {
+        if (game.white?.name === username || game.black?.name === username) {
+            userGames.push({
+                id: game.id,
+                white: game.white?.name,
+                black: game.black?.name,
+                currentTurn: game.currentTurn,
+                status: game.status,
+                result: game.result,
+                moveCount: game.moves?.length || 0,
+                updatedAt: game.updatedAt
+            });
+        }
+    }
+
+    return userGames;
+}
+
+// ============ End Game Persistence ============
 
 // HTML escape to prevent XSS
 function escapeHtml(str) {
@@ -433,10 +554,7 @@ function updateEnPassantTarget(game, from, to, piece) {
     }
 }
 
-// Generate random game ID
-function generateGameId() {
-    return Math.random().toString(36).substr(2, 9);
-}
+// Note: generateGameId(whiteName, blackName) is defined earlier for name-based IDs
 
 // Generate Fischer Random starting position
 function generateFischerRandomPosition() {
@@ -482,7 +600,7 @@ function generateFischerRandomPosition() {
 }
 
 // Create initial game state
-function createGame(gameId) {
+function createGame(gameId, whiteName = null, blackName = null) {
     const backRank = generateFischerRandomPosition();
 
     // Find rook and king positions for castle rights
@@ -502,9 +620,13 @@ function createGame(gameId) {
     const leftRookSquareB = String.fromCharCode(97 + leftRookFile) + '8';
     const rightRookSquareB = String.fromCharCode(97 + rightRookFile) + '8';
 
+    const now = new Date().toISOString();
+
     const game = {
         id: gameId,
-        players: {},
+        white: whiteName ? { name: whiteName } : null,
+        black: blackName ? { name: blackName } : null,
+        players: {}, // Socket connections (transient)
         currentTurn: 'white',
         board: createInitialBoard(backRank),
         moves: [],
@@ -514,7 +636,9 @@ function createGame(gameId) {
             white: { queensideRook: leftRookSquareW, kingsideRook: rightRookSquareW },
             black: { queensideRook: leftRookSquareB, kingsideRook: rightRookSquareB }
         },
-        result: null // null, 'white', 'black', 'draw'
+        result: null, // null, 'white', 'black', 'draw'
+        createdAt: now,
+        updatedAt: now
     };
 
     return game;
@@ -671,13 +795,14 @@ io.on('connection', (socket) => {
             return;
         }
         
-        // Create game (players will join when they open the game page)
-        const gameId = generateGameId();
-        const game = createGame(gameId);
-        // Store intended player names so join-game can assign colors correctly
-        game.challengerName = challenge.challenger;
-        game.accepterName = player.username;
+        // Create game with player names (challenger = white, accepter = black)
+        const whiteName = challenge.challenger;
+        const blackName = player.username;
+        const gameId = generateGameId(whiteName, blackName);
+        const game = createGame(gameId, whiteName, blackName);
         games.set(gameId, game);
+        saveGame(game);
+        console.log(`Game ${gameId} created and saved to disk`);
 
         // Remove challenge
         lobbyChallenges.delete(challengeId);
@@ -693,6 +818,35 @@ io.on('connection', (socket) => {
         broadcastLobbyUpdate();
     });
     
+    socket.on('get-my-games', (username) => {
+        if (!username) {
+            socket.emit('my-games', []);
+            return;
+        }
+        const userGames = getGamesForUser(username);
+        socket.emit('my-games', userGames);
+    });
+
+    socket.on('delete-game', (gameId) => {
+        const game = games.get(gameId);
+        if (!game) {
+            socket.emit('error', 'Game not found');
+            return;
+        }
+
+        // Remove from memory
+        games.delete(gameId);
+
+        // Remove from disk
+        deleteGame(gameId);
+
+        // Notify the player
+        socket.emit('game-deleted', { gameId });
+
+        // Update lobby
+        broadcastLobbyUpdate();
+    });
+
     socket.on('quick-play', () => {
         const player = lobbyPlayers.get(socket.id);
         if (!player || !player.username) {
@@ -736,55 +890,81 @@ io.on('connection', (socket) => {
         console.log(`Game created: ${gameId}`);
     });
 
-    socket.on('join-game', (gameId) => {
+    socket.on('join-game', ({ gameId, username }) => {
         const game = games.get(gameId);
-        
+
         if (!game) {
             socket.emit('error', 'Game not found');
             return;
         }
-        
-        if (Object.keys(game.players).length >= 2) {
+
+        socket.join(gameId);
+
+        // Determine color by username (for rejoining persisted games)
+        let color = null;
+        let name = null;
+
+        // Check if user is already assigned to this game
+        if (game.white?.name === username) {
+            color = 'white';
+            name = username;
+        } else if (game.black?.name === username) {
+            color = 'black';
+            name = username;
+        } else if (!game.white?.name && Object.keys(game.players).length === 0) {
+            // First player slot available
+            color = 'white';
+            name = username || 'White Player';
+            game.white = { name };
+        } else if (!game.black?.name && Object.keys(game.players).length <= 1) {
+            // Second player slot available
+            color = 'black';
+            name = username || 'Black Player';
+            game.black = { name };
+        }
+
+        if (!color) {
+            // Game is full and user is not one of the players
             socket.emit('error', 'Game is full');
             return;
         }
-        
-        socket.join(gameId);
 
-        // Determine color and name based on join order
-        const playerCount = Object.keys(game.players).length;
-        let color, name;
-        if (playerCount === 0) {
-            // First player is white (challenger in challenge games)
-            color = 'white';
-            name = game.challengerName || 'White Player';
-        } else {
-            // Second player is black (accepter in challenge games)
-            color = 'black';
-            name = game.accepterName || 'Black Player';
+        // Check if this player is already connected
+        const existingConnection = Object.entries(game.players).find(
+            ([sid, p]) => p.color === color
+        );
+        if (existingConnection) {
+            // Remove old connection
+            delete game.players[existingConnection[0]];
         }
 
         game.players[socket.id] = { color, id: socket.id, name };
 
-        if (Object.keys(game.players).length === 2) {
+        if (Object.keys(game.players).length === 2 && game.status === 'waiting') {
             game.status = 'active';
+            saveGame(game);
         }
 
         socket.emit('game-joined', {
             gameId,
             color,
             board: game.board,
-            castleRights: game.castleRights
+            castleRights: game.castleRights,
+            moves: game.moves,
+            currentTurn: game.currentTurn,
+            enPassantTarget: game.enPassantTarget,
+            status: game.status,
+            result: game.result
         });
-        
+
         // Notify all players in the game
         io.to(gameId).emit('game-updated', {
             players: Object.values(game.players),
             status: game.status,
             currentTurn: game.currentTurn
         });
-        
-        console.log(`Player joined game: ${gameId}`);
+
+        console.log(`Player ${name} joined game: ${gameId} as ${color}`);
     });
 
     socket.on('make-move', ({ gameId, from, to }) => {
@@ -907,6 +1087,9 @@ io.on('connection', (socket) => {
             gameOver
         });
 
+        // Save game state to disk
+        saveGame(game);
+
         console.log(`Move made in game ${gameId}: ${from} to ${to}`);
         if (gameOver) {
             console.log(`Game ${gameId} ended: ${gameOver.type}${gameOver.winner ? ' - ' + gameOver.winner + ' wins' : ''}`);
@@ -935,26 +1118,26 @@ io.on('connection', (socket) => {
         // Broadcast lobby updates
         broadcastLobbyUpdate();
         
-        // Remove player from any games
+        // Remove player from any games (but keep persisted games)
         for (const [gameId, game] of games.entries()) {
             if (game.players[socket.id]) {
                 delete game.players[socket.id];
-                
-                // If game is empty, remove it
-                if (Object.keys(game.players).length === 0) {
-                    games.delete(gameId);
-                    console.log(`Game ${gameId} removed - no players`);
-                } else {
-                    // Notify remaining players
+
+                // Notify remaining players
+                if (Object.keys(game.players).length > 0) {
                     io.to(gameId).emit('player-disconnected', {
                         players: Object.values(game.players)
                     });
                 }
+                // Note: We don't delete games from memory anymore - they persist on disk
                 break;
             }
         }
     });
 });
+
+// Load persisted games on startup
+loadAllGames();
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

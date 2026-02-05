@@ -91,6 +91,16 @@ class Game {
     }
     
     setupSocketListeners() {
+        // Handle socket reconnection - rejoin game if we were in one
+        this.socket.on('connect', () => {
+            console.log('Socket connected');
+            if (this.gameId) {
+                console.log('Rejoining game:', this.gameId);
+                const username = localStorage.getItem('chess-username') || '';
+                this.socket.emit('join-game', { gameId: this.gameId, username });
+            }
+        });
+
         this.socket.on('game-created', (data) => {
             this.gameId = data.gameId;
             this.playerColor = data.color;
@@ -104,10 +114,33 @@ class Game {
         this.socket.on('game-joined', (data) => {
             this.gameId = data.gameId;
             this.playerColor = data.color;
+            this.currentTurn = data.currentTurn || 'white';
             this.board.setPlayerColor(data.color); // Set board orientation
             this.board.castleRights = data.castleRights || null;
+            this.board.enPassantTarget = data.enPassantTarget || null;
             this.board.setupBoard(data.board);
-            this.updateGameStatus('Game joined! Waiting for white to move...');
+
+            // Restore move history if rejoining
+            if (data.moves && data.moves.length > 0) {
+                this.updateMoveHistory(data.moves);
+            }
+
+            // Handle finished games
+            if (data.status === 'finished') {
+                let statusMessage;
+                if (data.result === 'draw') {
+                    statusMessage = 'Game Over - Draw';
+                } else {
+                    const winnerIsMe = data.result === this.playerColor;
+                    statusMessage = winnerIsMe ? 'Game Over - You won!' : 'Game Over - You lost';
+                }
+                this.updateGameStatus(statusMessage);
+                this.board.setInteractive(false);
+            } else {
+                const isMyTurn = this.currentTurn === this.playerColor;
+                this.updateGameStatus(isMyTurn ? 'Your turn!' : "Waiting for opponent...");
+                this.board.setInteractive(isMyTurn);
+            }
         });
         
         this.socket.on('game-updated', (data) => {
@@ -194,7 +227,8 @@ class Game {
     }
     
     joinGame(gameId) {
-        this.socket.emit('join-game', gameId);
+        const username = localStorage.getItem('chess-username') || '';
+        this.socket.emit('join-game', { gameId, username });
         document.getElementById('new-game-btn').disabled = true;
         document.getElementById('join-game-btn').disabled = true;
     }
