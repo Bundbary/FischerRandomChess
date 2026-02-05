@@ -922,7 +922,7 @@ io.on('connection', (socket) => {
         console.log(`Game created: ${gameId}`);
     });
 
-    socket.on('join-game', ({ gameId, username }) => {
+    socket.on('join-game', ({ gameId, username, spectate }) => {
         const game = games.get(gameId);
 
         if (!game) {
@@ -931,6 +931,36 @@ io.on('connection', (socket) => {
         }
 
         socket.join(gameId);
+
+        // Handle spectator mode
+        if (spectate) {
+            // Spectators can watch but not play
+            // Build player list for spectators to see names
+            const players = [];
+            if (game.white?.name) {
+                players.push({ color: 'white', name: game.white.name });
+            }
+            if (game.black?.name) {
+                players.push({ color: 'black', name: game.black.name });
+            }
+
+            socket.emit('game-joined', {
+                gameId,
+                color: null,
+                spectator: true,
+                board: game.board,
+                castleRights: game.castleRights,
+                moves: game.moves,
+                currentTurn: game.currentTurn,
+                enPassantTarget: game.enPassantTarget,
+                status: game.status,
+                result: game.result,
+                chatHistory: loadGameChat(gameId),
+                players: players
+            });
+            console.log(`Spectator joined game: ${gameId}`);
+            return;
+        }
 
         // Determine color by username (for rejoining persisted games)
         let color = null;
@@ -961,13 +991,22 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Check if this player is already connected
+        // Check if this player (same username) is already connected with an active socket
         const existingConnection = Object.entries(game.players).find(
-            ([sid, p]) => p.color === color
+            ([sid, p]) => p.color === color && p.name === username
         );
         if (existingConnection) {
-            // Remove old connection
-            delete game.players[existingConnection[0]];
+            const [existingSocketId] = existingConnection;
+            const existingSocket = io.sockets.sockets.get(existingSocketId);
+
+            // If the existing socket is still connected, reject this connection
+            if (existingSocket && existingSocket.connected) {
+                socket.emit('error', `${username} is already connected to this game in another window`);
+                return;
+            }
+
+            // Old socket is disconnected, remove it
+            delete game.players[existingSocketId];
         }
 
         game.players[socket.id] = { color, id: socket.id, name };
@@ -980,6 +1019,7 @@ io.on('connection', (socket) => {
         socket.emit('game-joined', {
             gameId,
             color,
+            spectator: false,
             board: game.board,
             castleRights: game.castleRights,
             moves: game.moves,

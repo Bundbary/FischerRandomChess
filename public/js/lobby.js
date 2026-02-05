@@ -550,7 +550,12 @@ class ChessLobby {
             const spectateBtn = document.createElement('button');
             spectateBtn.className = 'spectate-btn';
             spectateBtn.textContent = 'Watch';
-            spectateBtn.onclick = () => window.open(`/?game=${gameId}&spectate=true`, '_blank');
+            spectateBtn.onclick = () => {
+                const newWindow = window.open(`/?game=${gameId}&spectate=true`, '_blank');
+                if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                    alert('Popup blocked! Please allow popups for this site, or copy this URL: ' + window.location.origin + '/?game=' + gameId + '&spectate=true');
+                }
+            };
             
             gameDiv.appendChild(infoDiv);
             gameDiv.appendChild(spectateBtn);

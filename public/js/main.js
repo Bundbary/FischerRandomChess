@@ -8,7 +8,8 @@ class Game {
         this.gameId = null;
         this.playerColor = null;
         this.currentTurn = 'white';
-        
+        this.isSpectator = false;
+
         this.init();
     }
     
@@ -108,7 +109,7 @@ class Game {
             if (this.gameId) {
                 console.log('Rejoining game:', this.gameId);
                 const username = localStorage.getItem('chess-username') || '';
-                this.socket.emit('join-game', { gameId: this.gameId, username });
+                this.socket.emit('join-game', { gameId: this.gameId, username, spectate: this.isSpectator });
             }
         });
 
@@ -126,7 +127,10 @@ class Game {
             this.gameId = data.gameId;
             this.playerColor = data.color;
             this.currentTurn = data.currentTurn || 'white';
-            this.board.setPlayerColor(data.color); // Set board orientation
+            this.isSpectator = data.spectator || false;
+
+            // Set board orientation (spectators see white's perspective)
+            this.board.setPlayerColor(data.color || 'white');
             this.board.castleRights = data.castleRights || null;
             this.board.enPassantTarget = data.enPassantTarget || null;
             this.board.setupBoard(data.board);
@@ -139,6 +143,17 @@ class Game {
             // Load chat history if available
             if (data.chatHistory && data.chatHistory.length > 0) {
                 this.loadChatHistory(data.chatHistory);
+            }
+
+            // Handle spectator mode
+            if (this.isSpectator) {
+                this.updateGameStatus(`Spectating - ${data.currentTurn}'s turn`);
+                this.board.setInteractive(false);
+                // Show player names for spectators
+                if (data.players) {
+                    this.updateSpectatorPlayerInfo(data.players);
+                }
+                return;
             }
 
             // Handle finished games
@@ -184,8 +199,12 @@ class Game {
             if (data.gameOver) {
                 let statusMessage;
                 if (data.gameOver.type === 'checkmate') {
-                    const winnerIsMe = data.gameOver.winner === this.playerColor;
-                    statusMessage = winnerIsMe ? 'Checkmate! You win!' : 'Checkmate! You lose.';
+                    if (this.isSpectator) {
+                        statusMessage = `Checkmate! ${data.gameOver.winner} wins!`;
+                    } else {
+                        const winnerIsMe = data.gameOver.winner === this.playerColor;
+                        statusMessage = winnerIsMe ? 'Checkmate! You win!' : 'Checkmate! You lose.';
+                    }
                 } else if (data.gameOver.type === 'stalemate') {
                     statusMessage = 'Stalemate - Draw!';
                 }
@@ -197,7 +216,11 @@ class Game {
 
             // Check status
             let statusMessage;
-            if (data.inCheck) {
+            if (this.isSpectator) {
+                statusMessage = data.inCheck
+                    ? `Check! ${this.currentTurn}'s turn`
+                    : `Spectating - ${this.currentTurn}'s turn`;
+            } else if (data.inCheck) {
                 const isYourTurn = this.currentTurn === this.playerColor;
                 statusMessage = isYourTurn ? 'Check! Your king is in danger' : "Check! Opponent's king is in danger";
             } else {
@@ -205,7 +228,8 @@ class Game {
             }
 
             this.updateGameStatus(statusMessage);
-            this.board.setInteractive(this.playerColor === this.currentTurn);
+            // Spectators can never interact with the board
+            this.board.setInteractive(!this.isSpectator && this.playerColor === this.currentTurn);
             this.updateMoveHistory(data.moves);
 
             // Update player indicators
@@ -236,8 +260,9 @@ class Game {
     checkUrlForGame() {
         const urlParams = new URLSearchParams(window.location.search);
         const gameId = urlParams.get('game');
+        const spectate = urlParams.get('spectate') === 'true';
         if (gameId) {
-            this.joinGame(gameId);
+            this.joinGame(gameId, spectate);
         }
     }
     
@@ -247,9 +272,10 @@ class Game {
         document.getElementById('join-game-btn').disabled = true;
     }
     
-    joinGame(gameId) {
+    joinGame(gameId, spectate = false) {
+        this.isSpectator = spectate;
         const username = localStorage.getItem('chess-username') || '';
-        this.socket.emit('join-game', { gameId, username });
+        this.socket.emit('join-game', { gameId, username, spectate });
         document.getElementById('new-game-btn').disabled = true;
         document.getElementById('join-game-btn').disabled = true;
     }
@@ -280,28 +306,31 @@ class Game {
     
     updateGameStatus(status) {
         const gameStatusElement = document.getElementById('game-status');
-        
+
         // Add turn indicator if game is active
         if (this.currentTurn && (status.includes("turn") || status.includes("move"))) {
             const turnColor = this.currentTurn;
-            const isYourTurn = turnColor === this.playerColor;
-            
-            gameStatusElement.innerHTML = `
-                ${status}
-                <span class="turn-indicator ${turnColor}"></span>
-            `;
-            
-            // Update status text to be more clear
-            if (isYourTurn) {
+
+            // Spectators get their own status format
+            if (this.isSpectator) {
                 gameStatusElement.innerHTML = `
-                    Your turn (${turnColor})
+                    ${status}
                     <span class="turn-indicator ${turnColor}"></span>
                 `;
             } else {
-                gameStatusElement.innerHTML = `
-                    Opponent's turn (${turnColor})
-                    <span class="turn-indicator ${turnColor}"></span>
-                `;
+                const isYourTurn = turnColor === this.playerColor;
+
+                if (isYourTurn) {
+                    gameStatusElement.innerHTML = `
+                        Your turn (${turnColor})
+                        <span class="turn-indicator ${turnColor}"></span>
+                    `;
+                } else {
+                    gameStatusElement.innerHTML = `
+                        Opponent's turn (${turnColor})
+                        <span class="turn-indicator ${turnColor}"></span>
+                    `;
+                }
             }
         } else {
             gameStatusElement.textContent = status;
@@ -508,7 +537,39 @@ class Game {
             }
         }
     }
-    
+
+    updateSpectatorPlayerInfo(players) {
+        // Spectators see white on bottom, black on top (standard orientation)
+        const blackElement = document.getElementById('player-black');
+        const whiteElement = document.getElementById('player-white');
+
+        blackElement.classList.remove('active');
+        whiteElement.classList.remove('active');
+
+        const whitePlayer = players.find(p => p.color === 'white');
+        const blackPlayer = players.find(p => p.color === 'black');
+
+        if (whitePlayer) {
+            const nameSpan = whiteElement.querySelector('.player-name');
+            const statusSpan = whiteElement.querySelector('.player-status');
+            nameSpan.textContent = `${whitePlayer.name} (white)`;
+            statusSpan.textContent = '';
+            if (this.currentTurn === 'white') {
+                whiteElement.classList.add('active');
+            }
+        }
+
+        if (blackPlayer) {
+            const nameSpan = blackElement.querySelector('.player-name');
+            const statusSpan = blackElement.querySelector('.player-status');
+            nameSpan.textContent = `${blackPlayer.name} (black)`;
+            statusSpan.textContent = '';
+            if (this.currentTurn === 'black') {
+                blackElement.classList.add('active');
+            }
+        }
+    }
+
     showGameLink(gameUrl) {
         const gameLinkDiv = document.getElementById('game-link');
         const gameUrlInput = document.getElementById('game-url');
@@ -538,10 +599,16 @@ class Game {
     openGameLink() {
         const gameUrlInput = document.getElementById('game-url');
         const gameUrl = gameUrlInput.value;
-        
+
         if (gameUrl) {
-            window.open(gameUrl, '_blank');
-            
+            const newWindow = window.open(gameUrl, '_blank');
+
+            // Check if popup was blocked
+            if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                this.showModal('Popup blocked! Please allow popups for this site, or copy the link and paste it in a new tab.');
+                return;
+            }
+
             // Visual feedback
             const openBtn = document.getElementById('open-link-btn');
             const originalText = openBtn.textContent;
