@@ -114,6 +114,21 @@ class Game {
             this.audio.setVolume(parseInt(e.target.value) / 100);
         });
 
+        // Sound preview button
+        document.getElementById('preview-sounds-btn').addEventListener('click', () => {
+            this.showSoundPreview();
+        });
+
+        document.getElementById('close-sound-preview').addEventListener('click', () => {
+            this.hideSoundPreview();
+        });
+
+        document.getElementById('sound-preview-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'sound-preview-modal') {
+                this.hideSoundPreview();
+            }
+        });
+
         // Panel toggle handled natively by details/summary elements
 
         // Game chat functionality
@@ -766,7 +781,58 @@ class Game {
     hideHelp() {
         document.getElementById('help-modal').classList.add('hidden');
     }
-    
+
+    showSoundPreview() {
+        const packId = document.getElementById('sound-pack-select').value;
+        const pack = this.soundPacks.find(p => p.id === packId);
+
+        const modal = document.getElementById('sound-preview-modal');
+        const title = document.getElementById('sound-preview-title');
+        const list = document.getElementById('sound-preview-list');
+
+        title.textContent = pack ? `Preview: ${pack.name}` : 'Preview Sounds';
+        list.innerHTML = '';
+
+        if (!pack || pack.id === 'none' || !pack.sounds || Object.keys(pack.sounds).length === 0) {
+            list.innerHTML = '<div class="sound-preview-empty">No sounds in this pack</div>';
+        } else {
+            const soundNames = {
+                'move': 'Move',
+                'capture': 'Capture',
+                'check': 'Check',
+                'castle': 'Castle',
+                'game-start': 'Game Start',
+                'game-end': 'Game End'
+            };
+
+            for (const [key, path] of Object.entries(pack.sounds)) {
+                const item = document.createElement('div');
+                item.className = 'sound-preview-item';
+                item.innerHTML = `
+                    <span class="sound-name">${soundNames[key] || key}</span>
+                    <button class="play-btn" data-sound="${path}">&#9654;</button>
+                `;
+                list.appendChild(item);
+            }
+
+            // Add click handlers for play buttons
+            list.querySelectorAll('.play-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const soundPath = btn.dataset.sound;
+                    const audio = new Audio(soundPath);
+                    audio.volume = this.audio.volume;
+                    audio.play().catch(() => {});
+                });
+            });
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    hideSoundPreview() {
+        document.getElementById('sound-preview-modal').classList.add('hidden');
+    }
+
     showModal(message, options = {}) {
         return new Promise((resolve) => {
             const modal = document.getElementById('generic-modal');
