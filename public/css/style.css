@@ -531,12 +531,13 @@ header h1 {
 }
 
 .panel-content {
-    overflow: hidden;
+    overflow: visible;
     transition: max-height 0.3s ease;
 }
 
 .panel-content.collapsed {
     max-height: 0;
+    overflow: hidden;
 }
 
 .controls {
@@ -750,6 +751,7 @@ header h1 {
     padding: 16px;
     overflow-y: auto;
     max-height: 300px;
+    min-height: 120px;
 }
 
 #moves-list {
@@ -764,6 +766,61 @@ header h1 {
 .move-number {
     color: #6b645a;
     text-align: right;
+}
+
+/* History Navigation */
+.history-nav {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #4a4741;
+}
+
+.history-nav button {
+    width: 36px;
+    height: 28px;
+    background: #4a4741;
+    color: #f0d9b5;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.history-nav button:hover {
+    background: #5a5751;
+}
+
+.history-nav button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Viewing history indicator */
+.viewing-history #game-status {
+    background: #8b6914 !important;
+}
+
+.viewing-history .chess-board {
+    opacity: 0.85;
+}
+
+#moves-list .move-entry {
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+#moves-list .move-entry:hover {
+    background: rgba(240, 217, 181, 0.1);
+}
+
+#moves-list .move-entry.current {
+    background: rgba(118, 150, 86, 0.3);
 }
 
 /* Game Chat */

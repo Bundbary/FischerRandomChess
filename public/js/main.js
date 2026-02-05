@@ -10,6 +10,11 @@ class Game {
         this.currentTurn = 'white';
         this.isSpectator = false;
 
+        // History navigation state
+        this.initialBoard = null;
+        this.moves = [];
+        this.viewingMoveIndex = -1; // -1 = live position, 0+ = viewing history
+
         this.init();
     }
     
@@ -100,6 +105,32 @@ class Game {
                 this.sendChatMessage();
             }
         });
+
+        // History navigation buttons
+        document.getElementById('nav-first').addEventListener('click', () => this.navigateToMove(0));
+        document.getElementById('nav-prev').addEventListener('click', () => this.navigatePrev());
+        document.getElementById('nav-next').addEventListener('click', () => this.navigateNext());
+        document.getElementById('nav-last').addEventListener('click', () => this.navigateToLive());
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            // Only handle if we have moves and not typing in an input
+            if (!this.moves.length || e.target.tagName === 'INPUT') return;
+
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                this.navigatePrev();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                this.navigateNext();
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                this.navigateToMove(0);
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                this.navigateToLive();
+            }
+        });
     }
     
     setupSocketListeners() {
@@ -129,6 +160,11 @@ class Game {
             this.currentTurn = data.currentTurn || 'white';
             this.isSpectator = data.spectator || false;
 
+            // Store history data for navigation
+            this.initialBoard = data.initialBoard;
+            this.moves = data.moves || [];
+            this.viewingMoveIndex = -1; // Start at live position
+
             // Set board orientation (spectators see white's perspective)
             this.board.setPlayerColor(data.color || 'white');
             this.board.castleRights = data.castleRights || null;
@@ -136,9 +172,10 @@ class Game {
             this.board.setupBoard(data.board);
 
             // Restore move history if rejoining
-            if (data.moves && data.moves.length > 0) {
-                this.updateMoveHistory(data.moves);
+            if (this.moves.length > 0) {
+                this.updateMoveHistory(this.moves);
             }
+            this.updateNavButtons();
 
             // Load chat history if available
             if (data.chatHistory && data.chatHistory.length > 0) {
@@ -184,6 +221,13 @@ class Game {
         });
         
         this.socket.on('move-made', (data) => {
+            // Store moves for history navigation
+            this.moves = data.moves || [];
+
+            // Always return to live position when a new move is made
+            this.viewingMoveIndex = -1;
+            document.body.classList.remove('viewing-history');
+
             this.board.setupBoard(data.board);
             this.currentTurn = data.currentTurn;
 
@@ -210,7 +254,8 @@ class Game {
                 }
                 this.updateGameStatus(statusMessage);
                 this.board.setInteractive(false);
-                this.updateMoveHistory(data.moves);
+                this.updateMoveHistory(this.moves);
+                this.updateNavButtons();
                 return;
             }
 
@@ -230,7 +275,8 @@ class Game {
             this.updateGameStatus(statusMessage);
             // Spectators can never interact with the board
             this.board.setInteractive(!this.isSpectator && this.playerColor === this.currentTurn);
-            this.updateMoveHistory(data.moves);
+            this.updateMoveHistory(this.moves);
+            this.updateNavButtons();
 
             // Update player indicators
             if (this.gameId) {
@@ -716,19 +762,199 @@ class Game {
     updateMoveHistory(moves) {
         const movesList = document.getElementById('moves-list');
         movesList.innerHTML = '';
-        
+
         for (let i = 0; i < moves.length; i += 2) {
             const moveNumber = Math.floor(i / 2) + 1;
             const whiteMove = moves[i];
             const blackMove = moves[i + 1];
-            
+
             const moveRow = document.createElement('div');
-            moveRow.innerHTML = `
-                <span>${moveNumber}. ${whiteMove ? whiteMove.from + '-' + whiteMove.to : ''}</span>
-                <span>${blackMove ? blackMove.from + '-' + blackMove.to : ''}</span>
-            `;
+
+            // Move number
+            const numSpan = document.createElement('span');
+            numSpan.className = 'move-number';
+            numSpan.textContent = `${moveNumber}.`;
+            moveRow.appendChild(numSpan);
+
+            // White move (clickable)
+            const whiteSpan = document.createElement('span');
+            whiteSpan.className = 'move-entry';
+            whiteSpan.dataset.moveIndex = i;
+            whiteSpan.textContent = whiteMove ? `${whiteMove.from}-${whiteMove.to}` : '';
+            if (whiteMove) {
+                whiteSpan.addEventListener('click', () => this.navigateToMove(i + 1));
+            }
+            moveRow.appendChild(whiteSpan);
+
+            // Black move (clickable)
+            const blackSpan = document.createElement('span');
+            blackSpan.className = 'move-entry';
+            blackSpan.dataset.moveIndex = i + 1;
+            blackSpan.textContent = blackMove ? `${blackMove.from}-${blackMove.to}` : '';
+            if (blackMove) {
+                blackSpan.addEventListener('click', () => this.navigateToMove(i + 2));
+            }
+            moveRow.appendChild(blackSpan);
+
             movesList.appendChild(moveRow);
         }
+
+        this.highlightCurrentMove();
+    }
+
+    // ============ History Navigation ============
+
+    navigateToMove(moveIndex) {
+        // Check if history navigation is available
+        if (!this.initialBoard) {
+            this.showModal('History navigation not available for this game (created before this feature).');
+            return;
+        }
+
+        // moveIndex: 0 = initial position, 1 = after move 1, etc.
+        if (moveIndex < 0) moveIndex = 0;
+        if (moveIndex > this.moves.length) moveIndex = this.moves.length;
+
+        if (moveIndex === this.moves.length) {
+            // Go to live position
+            this.navigateToLive();
+            return;
+        }
+
+        this.viewingMoveIndex = moveIndex;
+        const board = this.reconstructBoardAtMove(moveIndex);
+        this.board.setupBoard(board);
+        this.board.setInteractive(false); // Can't move while viewing history
+
+        document.body.classList.add('viewing-history');
+        this.updateGameStatus(`Viewing move ${moveIndex} of ${this.moves.length}`);
+        this.highlightCurrentMove();
+        this.updateNavButtons();
+    }
+
+    navigatePrev() {
+        if (this.viewingMoveIndex === -1) {
+            // Currently at live, go to last move
+            this.navigateToMove(this.moves.length - 1);
+        } else if (this.viewingMoveIndex > 0) {
+            this.navigateToMove(this.viewingMoveIndex - 1);
+        }
+    }
+
+    navigateNext() {
+        if (this.viewingMoveIndex === -1) return; // Already at live
+
+        if (this.viewingMoveIndex < this.moves.length - 1) {
+            this.navigateToMove(this.viewingMoveIndex + 1);
+        } else {
+            this.navigateToLive();
+        }
+    }
+
+    navigateToLive() {
+        this.viewingMoveIndex = -1;
+        document.body.classList.remove('viewing-history');
+
+        // Restore live board state by reconstructing from all moves
+        if (this.initialBoard) {
+            const liveBoard = this.reconstructBoardAtMove(this.moves.length);
+            this.board.setupBoard(liveBoard);
+        }
+        // If no initialBoard, the board is already showing the live state
+
+        // Restore interactivity based on turn
+        const isMyTurn = this.currentTurn === this.playerColor;
+        this.board.setInteractive(!this.isSpectator && isMyTurn);
+
+        // Restore status
+        if (this.isSpectator) {
+            this.updateGameStatus(`Spectating - ${this.currentTurn}'s turn`);
+        } else {
+            this.updateGameStatus(isMyTurn ? 'Your turn!' : "Opponent's turn");
+        }
+
+        this.highlightCurrentMove();
+        this.updateNavButtons();
+    }
+
+    reconstructBoardAtMove(moveIndex) {
+        // Start from initial board
+        const board = JSON.parse(JSON.stringify(this.initialBoard));
+
+        // Apply moves up to moveIndex
+        for (let i = 0; i < moveIndex && i < this.moves.length; i++) {
+            const move = this.moves[i];
+            this.applyMoveToBoard(board, move);
+        }
+
+        return board;
+    }
+
+    applyMoveToBoard(board, move) {
+        // Handle castling
+        if (move.castling) {
+            // Move king
+            board[move.to] = board[move.from];
+            delete board[move.from];
+            // Move rook
+            board[move.castling.rookTo] = board[move.castling.rookFrom];
+            delete board[move.castling.rookFrom];
+            return;
+        }
+
+        // Handle en passant
+        if (move.enPassantCapture) {
+            board[move.to] = board[move.from];
+            delete board[move.from];
+            delete board[move.enPassantCapture];
+            return;
+        }
+
+        // Regular move
+        board[move.to] = board[move.from];
+        delete board[move.from];
+
+        // Handle promotion
+        if (move.promotion) {
+            board[move.to] = { piece: move.promotion, color: move.color };
+        }
+    }
+
+    highlightCurrentMove() {
+        // Remove all current highlights
+        document.querySelectorAll('#moves-list .move-entry.current').forEach(el => {
+            el.classList.remove('current');
+        });
+
+        if (this.viewingMoveIndex === -1) {
+            // At live position - highlight last move
+            const lastIndex = this.moves.length - 1;
+            if (lastIndex >= 0) {
+                const el = document.querySelector(`#moves-list .move-entry[data-move-index="${lastIndex}"]`);
+                if (el) el.classList.add('current');
+            }
+        } else if (this.viewingMoveIndex > 0) {
+            // Highlight the move we're viewing (moveIndex - 1 because moveIndex is position AFTER the move)
+            const el = document.querySelector(`#moves-list .move-entry[data-move-index="${this.viewingMoveIndex - 1}"]`);
+            if (el) el.classList.add('current');
+        }
+    }
+
+    updateNavButtons() {
+        const firstBtn = document.getElementById('nav-first');
+        const prevBtn = document.getElementById('nav-prev');
+        const nextBtn = document.getElementById('nav-next');
+        const lastBtn = document.getElementById('nav-last');
+
+        const atStart = this.viewingMoveIndex === 0;
+        const atLive = this.viewingMoveIndex === -1;
+        const noMoves = this.moves.length === 0;
+        const noHistory = !this.initialBoard; // Can't navigate without initial board
+
+        firstBtn.disabled = atStart || noMoves || noHistory;
+        prevBtn.disabled = atStart || noMoves || noHistory;
+        nextBtn.disabled = atLive || noMoves || noHistory;
+        lastBtn.disabled = atLive || noMoves || noHistory;
     }
 }
 

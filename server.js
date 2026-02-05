@@ -654,13 +654,16 @@ function createGame(gameId, whiteName = null, blackName = null) {
 
     const now = new Date().toISOString();
 
+    const initialBoard = createInitialBoard(backRank);
+
     const game = {
         id: gameId,
         white: whiteName ? { name: whiteName } : null,
         black: blackName ? { name: blackName } : null,
         players: {}, // Socket connections (transient)
         currentTurn: 'white',
-        board: createInitialBoard(backRank),
+        board: initialBoard,
+        initialBoard: JSON.parse(JSON.stringify(initialBoard)), // Preserved for move history navigation
         moves: [],
         status: 'waiting', // waiting, active, finished
         enPassantTarget: null, // Track en passant target square
@@ -949,6 +952,7 @@ io.on('connection', (socket) => {
                 color: null,
                 spectator: true,
                 board: game.board,
+                initialBoard: game.initialBoard,
                 castleRights: game.castleRights,
                 moves: game.moves,
                 currentTurn: game.currentTurn,
@@ -999,13 +1003,14 @@ io.on('connection', (socket) => {
             const [existingSocketId] = existingConnection;
             const existingSocket = io.sockets.sockets.get(existingSocketId);
 
-            // If the existing socket is still connected, reject this connection
+            // If the existing socket is still connected, disconnect it (new connection takes over)
             if (existingSocket && existingSocket.connected) {
-                socket.emit('error', `${username} is already connected to this game in another window`);
-                return;
+                console.log(`Disconnecting old socket for ${username} (takeover by new connection)`);
+                existingSocket.emit('error', 'You have been disconnected because you opened this game in another window');
+                existingSocket.disconnect(true);
             }
 
-            // Old socket is disconnected, remove it
+            // Remove old socket from players
             delete game.players[existingSocketId];
         }
 
@@ -1021,6 +1026,7 @@ io.on('connection', (socket) => {
             color,
             spectator: false,
             board: game.board,
+            initialBoard: game.initialBoard,
             castleRights: game.castleRights,
             moves: game.moves,
             currentTurn: game.currentTurn,
@@ -1111,10 +1117,46 @@ io.on('connection', (socket) => {
             }
         }
 
+        // Build move record with extra info for special moves
+        const moveRecord = { from, to, piece: piece.piece, color: piece.color };
+
         // Execute the move
         if (isCastle) {
+            // Get rook positions before executing
+            const rank = parseInt(to[1]);
+            const isKingside = to[0] === 'g';
+            let rookFrom = null;
+
+            // Find the rook that will move
+            if (isKingside) {
+                for (let f = 7; f >= 0; f--) {
+                    const square = String.fromCharCode(97 + f) + rank;
+                    const rookPiece = game.board[square];
+                    if (rookPiece && rookPiece.piece === 'r' && rookPiece.color === piece.color) {
+                        rookFrom = square;
+                        break;
+                    }
+                }
+            } else {
+                for (let f = 0; f <= 7; f++) {
+                    const square = String.fromCharCode(97 + f) + rank;
+                    const rookPiece = game.board[square];
+                    if (rookPiece && rookPiece.piece === 'r' && rookPiece.color === piece.color) {
+                        rookFrom = square;
+                        break;
+                    }
+                }
+            }
+
+            const rookTo = isKingside ? ('f' + rank) : ('d' + rank);
+            moveRecord.castling = { rookFrom, rookTo };
+
             executeCastling(game.board, from, to, piece.color);
         } else if (piece.piece === 'p' && isEnPassantMove(from, to, game.enPassantTarget)) {
+            const direction = piece.color === 'white' ? -1 : 1;
+            const capturedSquare = to[0] + (parseInt(to[1]) + direction);
+            moveRecord.enPassantCapture = capturedSquare;
+
             executeEnPassant(game.board, from, to, piece.color);
         } else {
             // Regular move
@@ -1122,11 +1164,12 @@ io.on('connection', (socket) => {
             delete game.board[from];
         }
 
-        // Pawn promotion (auto-queen)
+        // Pawn promotion (auto-queen for now)
         if (piece.piece === 'p') {
             const destRank = parseInt(to[1]);
             if ((piece.color === 'white' && destRank === 8) || (piece.color === 'black' && destRank === 1)) {
                 game.board[to] = { piece: 'q', color: piece.color };
+                moveRecord.promotion = 'q';
             }
         }
 
@@ -1150,7 +1193,7 @@ io.on('connection', (socket) => {
         updateEnPassantTarget(game, from, to, piece);
 
         // Add move to history
-        game.moves.push({ from, to, piece: piece.piece, color: piece.color });
+        game.moves.push(moveRecord);
 
         // Switch turns
         game.currentTurn = game.currentTurn === 'white' ? 'black' : 'white';

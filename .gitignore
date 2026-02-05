@@ -42,3 +42,9 @@ Thumbs.db
 
 # Claude Code settings
 .claude/
+
+# Game data (persisted on server)
+games/
+
+# Windows artifacts
+nul
