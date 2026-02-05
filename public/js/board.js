@@ -64,7 +64,25 @@ export class ChessBoard {
     setPlayerColor(color) {
         this.playerColor = color;
         this.createBoard(); // Recreate board with new orientation
+        this.updateCoordinateLabels(); // Update rank/file labels for orientation
         this.renderBoard(); // Re-render pieces
+    }
+
+    updateCoordinateLabels() {
+        const rankLabels = document.getElementById('rank-labels');
+        const fileLabels = document.getElementById('file-labels');
+
+        if (!rankLabels || !fileLabels) return;
+
+        if (this.playerColor === 'white') {
+            // White: ranks 8-1 top to bottom, files a-h left to right
+            rankLabels.innerHTML = '<span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>';
+            fileLabels.innerHTML = '<span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>';
+        } else {
+            // Black: ranks 1-8 top to bottom, files h-a left to right
+            rankLabels.innerHTML = '<span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span>';
+            fileLabels.innerHTML = '<span>h</span><span>g</span><span>f</span><span>e</span><span>d</span><span>c</span><span>b</span><span>a</span>';
+        }
     }
     
     setupBoard(boardState) {

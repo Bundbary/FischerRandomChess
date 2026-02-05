@@ -279,12 +279,55 @@ header h1 {
     font-size: 12px;
 }
 
+.board-wrapper {
+    display: flex;
+    order: 2;
+    flex-shrink: 0;
+}
+
+.rank-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-around;
+    padding-right: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #a0a0a0;
+}
+
+.rank-labels span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: calc(min(calc(100vh - 48px - 120px), 600px) / 8);
+}
+
+.board-with-files {
+    display: flex;
+    flex-direction: column;
+}
+
+.file-labels {
+    display: flex;
+    justify-content: space-around;
+    padding-top: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #a0a0a0;
+}
+
+.file-labels span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(min(calc(100vh - 48px - 120px), 600px) / 8);
+}
+
 .chess-board {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     grid-template-rows: repeat(8, 1fr);
     border: 3px solid #4a4741;
-    order: 2;
     flex-shrink: 0;
     width: min(calc(100vh - 48px - 120px), 600px);
     height: min(calc(100vh - 48px - 120px), 600px);
