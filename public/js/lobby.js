@@ -52,16 +52,11 @@ class ChessLobby {
             this.socket.emit('set-username', savedUsername);
             this.socket.emit('get-my-games', savedUsername);
 
-            // Update UI to show username is set
+            // Update UI to logged-in state
             const usernameInput = document.getElementById('username');
+            usernameInput.value = savedUsername;
             usernameInput.disabled = true;
-            document.getElementById('set-username-btn').textContent = 'Change';
-            document.getElementById('set-username-btn').onclick = () => {
-                usernameInput.disabled = false;
-                usernameInput.focus();
-                document.getElementById('set-username-btn').textContent = 'Set Name';
-                document.getElementById('set-username-btn').onclick = () => this.setUsername();
-            };
+            document.getElementById('set-username-btn').textContent = 'Logout';
             console.log('Username registered with server:', savedUsername);
         }
     }
@@ -144,6 +139,21 @@ class ChessLobby {
                 this.hideHelp();
             }
         });
+
+        // Alert modal
+        document.getElementById('close-alert-modal').addEventListener('click', () => {
+            this.hideAlertModal();
+        });
+
+        document.getElementById('alert-modal-ok').addEventListener('click', () => {
+            this.hideAlertModal();
+        });
+
+        document.getElementById('alert-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'alert-modal') {
+                this.hideAlertModal();
+            }
+        });
         
         // Panel toggles
         document.querySelectorAll('.panel-header').forEach(header => {
@@ -196,7 +206,11 @@ class ChessLobby {
         });
         
         this.socket.on('error', (message) => {
-            this.showError(message);
+            if (message === 'Username already taken') {
+                this.showAlert(message, () => this.generateAnonymousUsername());
+            } else {
+                this.showError(message);
+            }
         });
 
         this.socket.on('my-games', (games) => {
@@ -293,6 +307,15 @@ class ChessLobby {
     
     setUsername() {
         const usernameInput = document.getElementById('username');
+        const btn = document.getElementById('set-username-btn');
+
+        // If logged in, this is a logout action
+        if (btn.textContent === 'Logout') {
+            this.showAlert('Logout?', () => this.logout());
+            return;
+        }
+
+        // Otherwise, this is a login attempt
         const username = usernameInput.value.trim();
 
         if (username.length < 2) {
@@ -309,7 +332,7 @@ class ChessLobby {
         const existingNames = document.querySelectorAll('#players-list .player-name');
         for (const nameEl of existingNames) {
             if (nameEl.textContent.toLowerCase() === username.toLowerCase()) {
-                this.showError('Username already taken');
+                this.showAlert('Username already taken', () => this.generateAnonymousUsername());
                 return;
             }
         }
@@ -320,27 +343,41 @@ class ChessLobby {
 
         // Request user's existing games
         this.socket.emit('get-my-games', username);
-        
-        // Update UI
+
+        // Update UI to logged-in state
         usernameInput.disabled = true;
-        document.getElementById('set-username-btn').textContent = 'Change';
-        document.getElementById('set-username-btn').onclick = () => {
-            usernameInput.disabled = false;
-            usernameInput.focus();
-            document.getElementById('set-username-btn').textContent = 'Set Name';
-            document.getElementById('set-username-btn').onclick = () => this.setUsername();
-        };
+        btn.textContent = 'Logout';
+    }
+
+    logout() {
+        const usernameInput = document.getElementById('username');
+        const btn = document.getElementById('set-username-btn');
+
+        // Clear from server
+        this.socket.emit('logout');
+
+        // Clear local state but keep name in field
+        this.username = '';
+        localStorage.removeItem('chess-username');
+
+        // Update UI to logged-out state
+        usernameInput.disabled = false;
+        usernameInput.focus();
+        usernameInput.select();
+        btn.textContent = 'Login';
     }
     
     generateAnonymousUsername() {
         const randomAdjective = this.adjectives[Math.floor(Math.random() * this.adjectives.length)];
         const randomNoun = this.nouns[Math.floor(Math.random() * this.nouns.length)];
         const anonymousName = `${randomAdjective} ${randomNoun}`;
-        
-        // Set the generated name in the input and trigger username setting
+
+        // Set the generated name in the input but don't auto-submit
         const usernameInput = document.getElementById('username');
         usernameInput.value = anonymousName;
-        this.setUsername();
+        usernameInput.disabled = false;
+        usernameInput.focus();
+        usernameInput.select();
     }
     
     showChallengeModal() {
@@ -611,6 +648,21 @@ class ChessLobby {
     hideAllModals() {
         this.hideHelp();
         this.hideChallengeModal();
+        this.hideAlertModal();
+    }
+
+    showAlert(message, callback = null) {
+        document.getElementById('alert-modal-message').textContent = message;
+        document.getElementById('alert-modal').classList.remove('hidden');
+        this.alertCallback = callback;
+    }
+
+    hideAlertModal() {
+        document.getElementById('alert-modal').classList.add('hidden');
+        if (this.alertCallback) {
+            this.alertCallback();
+            this.alertCallback = null;
+        }
     }
     
     togglePanel(panelName) {

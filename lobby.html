@@ -27,7 +27,7 @@
                         <div class="username-input">
                             <input type="text" id="username" placeholder="Enter your name..." maxlength="20">
                             <div class="username-buttons">
-                                <button id="set-username-btn">Set Name</button>
+                                <button id="set-username-btn">Login</button>
                                 <button id="anonymous-btn" class="anonymous-btn">Anonymous</button>
                             </div>
                         </div>
@@ -138,6 +138,22 @@
                 <div class="challenge-actions">
                     <button id="confirm-challenge-btn" class="primary-btn">Create Challenge</button>
                     <button id="cancel-challenge-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alert-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Notice</h2>
+                <button id="close-alert-modal" class="close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p id="alert-modal-message"></p>
+                <div style="margin-top: 15px; text-align: right;">
+                    <button id="alert-modal-ok" class="primary-btn">OK</button>
                 </div>
             </div>
         </div>

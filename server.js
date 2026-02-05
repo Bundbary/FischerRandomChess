@@ -874,7 +874,17 @@ io.on('connection', (socket) => {
         addSystemMessage(`${player.username} accepted ${challenge.challenger}'s challenge!`);
         broadcastLobbyUpdate();
     });
-    
+
+    socket.on('logout', () => {
+        const player = lobbyPlayers.get(socket.id);
+        if (player && player.username) {
+            addSystemMessage(`${player.username} logged out`);
+            player.username = '';
+            player.status = 'Available';
+            broadcastLobbyUpdate();
+        }
+    });
+
     socket.on('get-my-games', (username) => {
         if (!username) {
             socket.emit('my-games', []);
