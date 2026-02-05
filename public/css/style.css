@@ -4,6 +4,7 @@
     --board-theme-lightness-light: 70%;
     --board-theme-lightness-dark: 45%;
     --board-contrast: 25;
+    --board-size: calc(100vh - 48px - 100px);
 }
 
 * {
@@ -233,7 +234,7 @@ header h1 {
 .player-info {
     background: #3e3c38;
     padding: 8px 12px;
-    width: min(calc(100vh - 48px - 120px), 600px);
+    width: var(--board-size);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -299,7 +300,7 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: calc(min(calc(100vh - 48px - 120px), 600px) / 8);
+    height: calc(var(--board-size) / 8);
 }
 
 .board-with-files {
@@ -320,7 +321,7 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: calc(min(calc(100vh - 48px - 120px), 600px) / 8);
+    width: calc(var(--board-size) / 8);
 }
 
 .chess-board {
@@ -329,8 +330,8 @@ header h1 {
     grid-template-rows: repeat(8, 1fr);
     border: 3px solid #4a4741;
     flex-shrink: 0;
-    width: min(calc(100vh - 48px - 120px), 600px);
-    height: min(calc(100vh - 48px - 120px), 600px);
+    width: var(--board-size);
+    height: var(--board-size);
     aspect-ratio: 1;
 }
 
@@ -765,15 +766,119 @@ header h1 {
     text-align: right;
 }
 
+/* Game Chat */
+.game-chat {
+    display: flex;
+    flex-direction: column;
+    height: 250px;
+}
+
+.game-chat .chat-messages {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: #312e2b;
+}
+
+.game-chat .chat-message {
+    padding: 6px 10px;
+    border-radius: 6px;
+    max-width: 85%;
+    word-wrap: break-word;
+    font-size: 13px;
+}
+
+.game-chat .chat-message.white {
+    background: rgba(240, 217, 181, 0.15);
+    align-self: flex-start;
+    border-left: 3px solid #f0d9b5;
+}
+
+.game-chat .chat-message.black {
+    background: rgba(74, 71, 65, 0.4);
+    align-self: flex-end;
+    border-right: 3px solid #4a4741;
+}
+
+.game-chat .chat-username {
+    font-weight: 600;
+    font-size: 11px;
+    margin-bottom: 2px;
+    opacity: 0.8;
+}
+
+.game-chat .chat-message.white .chat-username {
+    color: #f0d9b5;
+}
+
+.game-chat .chat-message.black .chat-username {
+    color: #b8b1a7;
+}
+
+.game-chat .chat-text {
+    color: #b8b1a7;
+}
+
+.game-chat .chat-time {
+    font-size: 10px;
+    color: #666;
+    margin-left: 8px;
+}
+
+.game-chat .chat-input-container {
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+    border-top: 1px solid #4a4741;
+    background: #3e3c38;
+}
+
+.game-chat .chat-input-container input {
+    flex: 1;
+    padding: 8px 12px;
+    background: #312e2b;
+    border: 1px solid #4a4741;
+    border-radius: 4px;
+    color: #f0d9b5;
+    font-size: 13px;
+}
+
+.game-chat .chat-input-container input:focus {
+    outline: none;
+    border-color: #769656;
+}
+
+.game-chat .chat-input-container button {
+    padding: 8px 16px;
+    background: #769656;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.game-chat .chat-input-container button:hover {
+    background: #92b068;
+}
+
 .hidden {
     display: none !important;
 }
 
 @media (max-width: 768px) {
+    :root {
+        --board-size: min(calc(100vw - 40px), calc(100vh - 48px - 100px));
+    }
+
     .container {
         flex-direction: column;
     }
-    
+
     .side-panel {
         width: 100%;
         height: auto;
@@ -781,18 +886,12 @@ header h1 {
         border-top: 1px solid #4a4741;
         margin-top: 0;
     }
-    
-    .chess-board {
-        width: min(calc(100vw - 20px), calc(100vh - 48px - 120px));
-        height: min(calc(100vw - 20px), calc(100vh - 48px - 120px));
-    }
-    
+
     .square {
         font-size: 32px;
     }
-    
+
     .player-info {
         max-width: none;
-        width: min(calc(100vw - 20px), calc(100vh - 48px - 120px));
     }
 }

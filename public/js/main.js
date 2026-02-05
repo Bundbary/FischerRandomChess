@@ -88,6 +88,17 @@ class Game {
                 this.togglePanel(header.dataset.panel);
             });
         });
+
+        // Game chat functionality
+        document.getElementById('send-game-chat-btn').addEventListener('click', () => {
+            this.sendChatMessage();
+        });
+
+        document.getElementById('game-chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.sendChatMessage();
+            }
+        });
     }
     
     setupSocketListeners() {
@@ -123,6 +134,11 @@ class Game {
             // Restore move history if rejoining
             if (data.moves && data.moves.length > 0) {
                 this.updateMoveHistory(data.moves);
+            }
+
+            // Load chat history if available
+            if (data.chatHistory && data.chatHistory.length > 0) {
+                this.loadChatHistory(data.chatHistory);
             }
 
             // Handle finished games
@@ -209,6 +225,11 @@ class Game {
         this.socket.on('player-disconnected', (data) => {
             this.updateGameStatus('Opponent disconnected');
             this.board.setInteractive(false);
+        });
+
+        // Game chat messages
+        this.socket.on('game-chat-message', (data) => {
+            this.addChatMessage(data);
         });
     }
     
@@ -429,7 +450,7 @@ class Game {
     }
     
     loadPanelStates() {
-        ['controls', 'theme', 'history'].forEach(panelName => {
+        ['controls', 'theme', 'history', 'chat'].forEach(panelName => {
             const state = localStorage.getItem(`chess-panel-${panelName}`);
             const content = document.getElementById(panelName + '-content');
             const toggle = document.querySelector(`[data-panel="${panelName}"] .panel-toggle`);
@@ -579,6 +600,49 @@ class Game {
             okBtn.addEventListener('click', onOk);
             cancelBtn.addEventListener('click', onCancel);
             closeBtn.addEventListener('click', onCancel);
+        });
+    }
+
+    sendChatMessage() {
+        const input = document.getElementById('game-chat-input');
+        const message = input.value.trim();
+
+        if (!message || !this.gameId) return;
+
+        this.socket.emit('game-chat', {
+            gameId: this.gameId,
+            message: message
+        });
+
+        input.value = '';
+    }
+
+    addChatMessage(data) {
+        const messagesContainer = document.getElementById('game-chat-messages');
+        const messageEl = document.createElement('div');
+        messageEl.className = `chat-message ${data.color}`;
+
+        const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        messageEl.innerHTML = `
+            <span class="chat-username">${data.username}</span>
+            <span class="chat-time">${time}</span>
+            <div class="chat-text">${data.message}</div>
+        `;
+
+        messagesContainer.appendChild(messageEl);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        // Recalculate panel height if needed
+        this.recalculatePanelHeight('chat');
+    }
+
+    loadChatHistory(messages) {
+        const messagesContainer = document.getElementById('game-chat-messages');
+        messagesContainer.innerHTML = '';
+
+        messages.forEach(msg => {
+            this.addChatMessage(msg);
         });
     }
 

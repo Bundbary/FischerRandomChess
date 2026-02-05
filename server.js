@@ -120,16 +120,48 @@ function loadAllGames() {
 function deleteGame(gameId) {
     const gameDir = path.join(GAMES_DIR, gameId);
     if (fs.existsSync(gameDir)) {
-        // Remove game.json and the folder
-        const gamePath = path.join(gameDir, 'game.json');
-        if (fs.existsSync(gamePath)) {
-            fs.unlinkSync(gamePath);
+        // Remove all files in the folder
+        const files = fs.readdirSync(gameDir);
+        for (const file of files) {
+            fs.unlinkSync(path.join(gameDir, file));
         }
         fs.rmdirSync(gameDir);
         console.log(`Deleted game: ${gameId}`);
         return true;
     }
     return false;
+}
+
+// ============ Game Chat Functions ============
+
+// Load chat history for a game
+function loadGameChat(gameId) {
+    const chatPath = path.join(GAMES_DIR, gameId, 'chat.json');
+    if (fs.existsSync(chatPath)) {
+        const data = fs.readFileSync(chatPath, 'utf-8');
+        return JSON.parse(data);
+    }
+    return [];
+}
+
+// Save a chat message to disk
+function saveGameChatMessage(gameId, message) {
+    const gameDir = path.join(GAMES_DIR, gameId);
+    if (!fs.existsSync(gameDir)) {
+        return false;
+    }
+
+    const chatPath = path.join(gameDir, 'chat.json');
+    const messages = loadGameChat(gameId);
+    messages.push(message);
+
+    // Keep only last 100 messages
+    if (messages.length > 100) {
+        messages.splice(0, messages.length - 100);
+    }
+
+    fs.writeFileSync(chatPath, JSON.stringify(messages, null, 2));
+    return true;
 }
 
 // Get games for a specific username
@@ -954,7 +986,8 @@ io.on('connection', (socket) => {
             currentTurn: game.currentTurn,
             enPassantTarget: game.enPassantTarget,
             status: game.status,
-            result: game.result
+            result: game.result,
+            chatHistory: loadGameChat(gameId)
         });
 
         // Notify all players in the game
@@ -965,6 +998,34 @@ io.on('connection', (socket) => {
         });
 
         console.log(`Player ${name} joined game: ${gameId} as ${color}`);
+    });
+
+    // Game chat handler
+    socket.on('game-chat', ({ gameId, message }) => {
+        const game = games.get(gameId);
+        if (!game) {
+            socket.emit('error', 'Game not found');
+            return;
+        }
+
+        const player = game.players[socket.id];
+        if (!player) {
+            socket.emit('error', 'You are not in this game');
+            return;
+        }
+
+        const chatMessage = {
+            username: player.name,
+            color: player.color,
+            message: escapeHtml(message.trim().substring(0, 200)),
+            timestamp: new Date().toISOString()
+        };
+
+        // Save to disk
+        saveGameChatMessage(gameId, chatMessage);
+
+        // Broadcast to all players in the game
+        io.to(gameId).emit('game-chat-message', chatMessage);
     });
 
     socket.on('make-move', ({ gameId, from, to }) => {
