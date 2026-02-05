@@ -21,6 +21,7 @@
                 <div class="player-info" id="player-black">
                     <span class="player-name">Black Player</span>
                     <span class="player-status"></span>
+                    <div class="captured-pieces" id="captured-by-black"></div>
                 </div>
 
                 <div class="board-wrapper">
@@ -40,6 +41,7 @@
                 <div class="player-info" id="player-white">
                     <span class="player-name">White Player</span>
                     <span class="player-status"></span>
+                    <div class="captured-pieces" id="captured-by-white"></div>
                 </div>
             </div>
         </div>
@@ -64,7 +66,7 @@
             </details>
 
             <details class="panel-section">
-                <summary class="panel-header">Board Theme</summary>
+                <summary class="panel-header">Customize</summary>
                 <div class="panel-content">
                     <div class="theme-picker">
                         <div class="color-picker-container">
@@ -86,6 +88,31 @@
                                     <div class="slider-labels">
                                         <span>Low</span>
                                         <span>High</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="piece-set-control">
+                                <label for="piece-set-select">Piece Set:</label>
+                                <select id="piece-set-select">
+                                    <option value="default">Default</option>
+                                </select>
+                            </div>
+
+                            <div class="sound-pack-control">
+                                <label for="sound-pack-select">Sound Pack:</label>
+                                <select id="sound-pack-select">
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+
+                            <div class="volume-control">
+                                <label for="volume-slider">Volume:</label>
+                                <div class="slider-container">
+                                    <input type="range" id="volume-slider" min="0" max="100" value="50" step="5">
+                                    <div class="slider-labels">
+                                        <span>Off</span>
+                                        <span>Max</span>
                                     </div>
                                 </div>
                             </div>

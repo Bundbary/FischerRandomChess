@@ -1,10 +1,12 @@
 import { ChessBoard } from './board.js';
 import { SocketManager } from './socket.js';
+import { AudioManager } from './audio.js';
 
 class Game {
     constructor() {
         this.board = new ChessBoard();
         this.socket = new SocketManager();
+        this.audio = new AudioManager();
         this.gameId = null;
         this.playerColor = null;
         this.currentTurn = 'white';
@@ -15,14 +17,19 @@ class Game {
         this.moves = [];
         this.viewingMoveIndex = -1; // -1 = live position, 0+ = viewing history
 
+        // Available asset packs
+        this.pieceSets = [];
+        this.soundPacks = [];
+
         this.init();
     }
-    
+
     init() {
         this.setupEventListeners();
         this.checkUrlForGame();
         this.setupSocketListeners();
         this.loadSavedTheme();
+        this.loadAssetPacks();
     }
     
     setupEventListeners() {
@@ -91,7 +98,22 @@ class Game {
         document.getElementById('contrast-slider').addEventListener('input', (e) => {
             this.updateBoardContrast(parseInt(e.target.value));
         });
-        
+
+        // Piece set selector
+        document.getElementById('piece-set-select').addEventListener('change', (e) => {
+            this.setPieceSet(e.target.value);
+        });
+
+        // Sound pack selector
+        document.getElementById('sound-pack-select').addEventListener('change', (e) => {
+            this.setSoundPack(e.target.value);
+        });
+
+        // Volume slider
+        document.getElementById('volume-slider').addEventListener('input', (e) => {
+            this.audio.setVolume(parseInt(e.target.value) / 100);
+        });
+
         // Panel toggle handled natively by details/summary elements
 
         // Game chat functionality
@@ -176,6 +198,7 @@ class Game {
             // Restore move history if rejoining
             if (this.moves.length > 0) {
                 this.updateMoveHistory(this.moves);
+                this.updateCapturedPieces(this.moves);
             }
             this.updateNavButtons();
 
@@ -213,6 +236,11 @@ class Game {
                 this.updateGameStatus(isMyTurn ? 'Your turn!' : "Waiting for opponent...");
                 this.board.setInteractive(isMyTurn);
                 this.enableGameControls();
+
+                // Play game start sound (only for active games as a player)
+                if (data.status === 'active' || this.moves.length === 0) {
+                    this.audio.play('game-start');
+                }
             }
         });
         
@@ -249,6 +277,16 @@ class Game {
             if (data.castleRights) {
                 this.board.castleRights = data.castleRights;
             }
+
+            // Play move sound
+            const lastMove = this.moves[this.moves.length - 1];
+            this.audio.playMoveSound({
+                captured: lastMove?.captured,
+                isCastle: lastMove?.castle,
+                isCheck: data.inCheck,
+                isCheckmate: data.gameOver?.type === 'checkmate',
+                isStalemate: data.gameOver?.type === 'stalemate'
+            });
 
             // Handle game over
             if (data.gameOver) {
@@ -287,6 +325,7 @@ class Game {
             // Spectators can never interact with the board
             this.board.setInteractive(!this.isSpectator && this.playerColor === this.currentTurn);
             this.updateMoveHistory(this.moves);
+            this.updateCapturedPieces(this.moves);
             this.updateNavButtons();
 
             // Update player indicators
@@ -329,6 +368,9 @@ class Game {
             this.updateGameStatus(statusMessage);
             this.board.setInteractive(false);
             this.disableGameControls();
+
+            // Play game end sound
+            this.audio.play('game-end');
         });
 
         // Draw offer received
@@ -558,7 +600,90 @@ class Game {
             // Custom color, no preset should be active
         }
     }
-    
+
+    // Load available piece sets and sound packs from server
+    async loadAssetPacks() {
+        try {
+            // Fetch piece sets
+            const pieceSetsResponse = await fetch('/api/piece-sets');
+            this.pieceSets = await pieceSetsResponse.json();
+
+            // Fetch sound packs
+            const soundPacksResponse = await fetch('/api/sound-packs');
+            this.soundPacks = await soundPacksResponse.json();
+
+            // Populate dropdowns
+            this.populatePieceSetDropdown();
+            this.populateSoundPackDropdown();
+
+            // Restore saved preferences
+            this.restoreAssetPreferences();
+        } catch (e) {
+            console.warn('Failed to load asset packs:', e);
+        }
+    }
+
+    populatePieceSetDropdown() {
+        const select = document.getElementById('piece-set-select');
+        select.innerHTML = '';
+
+        for (const set of this.pieceSets) {
+            const option = document.createElement('option');
+            option.value = set.id;
+            option.textContent = set.name;
+            select.appendChild(option);
+        }
+    }
+
+    populateSoundPackDropdown() {
+        const select = document.getElementById('sound-pack-select');
+        select.innerHTML = '';
+
+        for (const pack of this.soundPacks) {
+            const option = document.createElement('option');
+            option.value = pack.id;
+            option.textContent = pack.name;
+            select.appendChild(option);
+        }
+    }
+
+    restoreAssetPreferences() {
+        // Restore piece set
+        const savedPieceSet = localStorage.getItem('chess-piece-set') || 'default';
+        const pieceSetSelect = document.getElementById('piece-set-select');
+        if (pieceSetSelect.querySelector(`option[value="${savedPieceSet}"]`)) {
+            pieceSetSelect.value = savedPieceSet;
+            this.setPieceSet(savedPieceSet);
+        }
+
+        // Restore sound pack
+        const savedSoundPack = this.audio.getSavedPackId() || 'none';
+        const soundPackSelect = document.getElementById('sound-pack-select');
+        if (soundPackSelect.querySelector(`option[value="${savedSoundPack}"]`)) {
+            soundPackSelect.value = savedSoundPack;
+            this.setSoundPack(savedSoundPack);
+        }
+
+        // Restore volume
+        const volumeSlider = document.getElementById('volume-slider');
+        volumeSlider.value = Math.round(this.audio.volume * 100);
+    }
+
+    setPieceSet(setId) {
+        const set = this.pieceSets.find(s => s.id === setId);
+        if (set) {
+            this.board.setPieceSet(set.path, set.format);
+            localStorage.setItem('chess-piece-set', setId);
+        }
+    }
+
+    setSoundPack(packId) {
+        const pack = this.soundPacks.find(p => p.id === packId);
+        if (pack) {
+            this.audio.setSoundPack(pack);
+        }
+    }
+
     updatePlayerInfo(players) {
         // Clear both player displays first
         const blackElement = document.getElementById('player-black');
@@ -768,6 +893,47 @@ class Game {
         this.highlightCurrentMove();
     }
 
+    updateCapturedPieces(moves, upToMoveIndex = null) {
+        // Use piece images from board (respects current piece set)
+        const pieceImages = this.board.pieceImages;
+
+        // Piece value order for sorting (high to low)
+        const pieceOrder = { 'q': 0, 'r': 1, 'b': 2, 'n': 3, 'p': 4 };
+
+        // Collect captures
+        const capturedByWhite = []; // Black pieces white has captured
+        const capturedByBlack = []; // White pieces black has captured
+
+        const limit = upToMoveIndex !== null ? upToMoveIndex : moves.length;
+        for (let i = 0; i < limit; i++) {
+            const move = moves[i];
+            if (move.captured) {
+                // The capturing color is the color that made the move
+                if (move.color === 'white') {
+                    capturedByWhite.push(move.captured);
+                } else {
+                    capturedByBlack.push(move.captured);
+                }
+            }
+        }
+
+        // Sort by piece value
+        capturedByWhite.sort((a, b) => pieceOrder[a] - pieceOrder[b]);
+        capturedByBlack.sort((a, b) => pieceOrder[a] - pieceOrder[b]);
+
+        // Render captured pieces
+        const whiteContainer = document.getElementById('captured-by-white');
+        const blackContainer = document.getElementById('captured-by-black');
+
+        whiteContainer.innerHTML = capturedByWhite.map(p =>
+            `<img src="${pieceImages['black'][p]}" alt="${p}">`
+        ).join('');
+
+        blackContainer.innerHTML = capturedByBlack.map(p =>
+            `<img src="${pieceImages['white'][p]}" alt="${p}">`
+        ).join('');
+    }
+
     // ============ History Navigation ============
 
     navigateToMove(moveIndex) {
@@ -805,6 +971,7 @@ class Game {
         this.updateGameStatus(`Viewing move ${moveIndex} of ${this.moves.length}`);
         this.highlightCurrentMove();
         this.updateNavButtons();
+        this.updateCapturedPieces(this.moves, moveIndex);
     }
 
     navigatePrev() {
@@ -855,6 +1022,9 @@ class Game {
         } else {
             this.updateGameStatus(isMyTurn ? 'Your turn!' : "Opponent's turn");
         }
+
+        // Show all captured pieces for live position
+        this.updateCapturedPieces(this.moves);
 
         this.highlightCurrentMove();
         this.updateNavButtons();

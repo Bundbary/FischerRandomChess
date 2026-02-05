@@ -8,28 +8,36 @@ export class ChessBoard {
         this.enPassantTarget = null; // Track en passant target square
         this.castleRights = null; // Track castling rights from server
         this.lastMove = null; // Track last move {from, to} for highlighting
-        
-        // Chess piece SVG files
-        this.pieceImages = {
-            'white': {
-                'k': '/pieces/wK.svg',
-                'q': '/pieces/wQ.svg', 
-                'r': '/pieces/wR.svg',
-                'b': '/pieces/wB.svg',
-                'n': '/pieces/wN.svg',
-                'p': '/pieces/wP.svg'
-            },
-            'black': {
-                'k': '/pieces/bK.svg',
-                'q': '/pieces/bQ.svg',
-                'r': '/pieces/bR.svg', 
-                'b': '/pieces/bB.svg',
-                'n': '/pieces/bN.svg',
-                'p': '/pieces/bP.svg'
-            }
-        };
-        
+
+        // Piece set configuration
+        this.pieceSetPath = '/pieces/default/';
+        this.pieceSetFormat = '.svg';
+
+        // Chess piece image paths (generated from pieceSetPath)
+        this.pieceImages = this.buildPieceImagePaths();
+
         this.createBoard();
+    }
+
+    // Build piece image paths from current set configuration
+    buildPieceImagePaths() {
+        const pieces = ['k', 'q', 'r', 'b', 'n', 'p'];
+        const result = { 'white': {}, 'black': {} };
+
+        for (const piece of pieces) {
+            result['white'][piece] = `${this.pieceSetPath}w${piece.toUpperCase()}${this.pieceSetFormat}`;
+            result['black'][piece] = `${this.pieceSetPath}b${piece.toUpperCase()}${this.pieceSetFormat}`;
+        }
+
+        return result;
+    }
+
+    // Set piece set (called from UI)
+    setPieceSet(path, format) {
+        this.pieceSetPath = path;
+        this.pieceSetFormat = format;
+        this.pieceImages = this.buildPieceImagePaths();
+        this.renderBoard(); // Re-render with new pieces
     }
     
     createBoard() {

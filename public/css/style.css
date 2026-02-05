@@ -5,6 +5,12 @@
     --board-theme-lightness-dark: 45%;
     --board-contrast: 25;
     --board-size: calc(100vh - 48px - 100px);
+
+    /* Theme-derived accent colors for UI elements */
+    --theme-accent: hsl(var(--board-theme-hue), 45%, 42%);
+    --theme-accent-hover: hsl(var(--board-theme-hue), 45%, 52%);
+    --theme-accent-glow: hsla(var(--board-theme-hue), 60%, 50%, 0.6);
+    --theme-accent-subtle: hsla(var(--board-theme-hue), 50%, 45%, 0.25);
 }
 
 * {
@@ -59,9 +65,9 @@ header h1 {
     font-size: 14px;
     font-weight: 500;
     padding: 4px 12px;
-    background: rgba(118, 150, 86, 0.2);
+    background: var(--theme-accent-subtle);
     border-radius: 4px;
-    border: 1px solid rgba(118, 150, 86, 0.3);
+    border: 1px solid var(--theme-accent);
 }
 
 .turn-indicator {
@@ -244,17 +250,39 @@ header h1 {
 }
 
 .player-info.active {
-    background: #4a4741;
-    border: 2px solid #769656;
-    box-shadow: 0 0 8px rgba(118, 150, 86, 0.4);
+    background: linear-gradient(90deg,
+        hsla(var(--board-theme-hue), 50%, 35%, 0.4) 0%,
+        hsla(var(--board-theme-hue), 50%, 35%, 0.15) 100%);
+    border: 2px solid var(--theme-accent);
+    box-shadow: 0 0 12px var(--theme-accent-glow),
+                inset 0 0 20px hsla(var(--board-theme-hue), 50%, 50%, 0.1);
+    animation: activeGlow 2s ease-in-out infinite;
+}
+
+@keyframes activeGlow {
+    0%, 100% {
+        box-shadow: 0 0 12px var(--theme-accent-glow),
+                    inset 0 0 20px hsla(var(--board-theme-hue), 50%, 50%, 0.1);
+    }
+    50% {
+        box-shadow: 0 0 20px var(--theme-accent-glow),
+                    0 0 30px hsla(var(--board-theme-hue), 60%, 50%, 0.3),
+                    inset 0 0 25px hsla(var(--board-theme-hue), 50%, 50%, 0.15);
+    }
 }
 
 .player-info.active::before {
-    content: '●';
-    color: #769656;
-    font-size: 12px;
-    margin-right: 8px;
-    animation: pulse 2s infinite;
+    content: '▶';
+    color: var(--theme-accent-hover);
+    font-size: 14px;
+    margin-right: 10px;
+    animation: arrowPulse 1.5s ease-in-out infinite;
+    text-shadow: 0 0 8px var(--theme-accent-glow);
+}
+
+@keyframes arrowPulse {
+    0%, 100% { opacity: 1; transform: translateX(0); }
+    50% { opacity: 0.7; transform: translateX(3px); }
 }
 
 @keyframes pulse {
@@ -276,8 +304,25 @@ header h1 {
 }
 
 .player-status {
-    color: #769656;
+    color: var(--theme-accent-hover);
     font-size: 12px;
+}
+
+.captured-pieces {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    min-height: 24px;
+    align-items: center;
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+.captured-pieces img {
+    width: 22px;
+    height: 22px;
+    opacity: 0.9;
+    filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.4));
 }
 
 .board-wrapper {
@@ -570,7 +615,7 @@ header h1 {
 }
 
 .controls button {
-    background: #769656;
+    background: var(--theme-accent);
     color: white;
     border: none;
     padding: 10px 16px;
@@ -578,12 +623,13 @@ header h1 {
     border-radius: 4px;
     font-size: 14px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, box-shadow 0.2s;
     width: calc(50% - 8px);
 }
 
 .controls button:hover {
-    background: #92b068;
+    background: var(--theme-accent-hover);
+    box-shadow: 0 0 8px var(--theme-accent-glow);
 }
 
 .controls button:disabled {
@@ -607,8 +653,8 @@ header h1 {
 }
 
 .draw-offer-banner {
-    background: rgba(118, 150, 86, 0.2);
-    border: 1px solid #769656;
+    background: var(--theme-accent-subtle);
+    border: 1px solid var(--theme-accent);
     border-radius: 4px;
     padding: 12px;
     margin: 8px 16px 16px;
@@ -662,11 +708,11 @@ header h1 {
 }
 
 #open-link-btn {
-    background: #769656;
+    background: var(--theme-accent);
 }
 
 #open-link-btn:hover {
-    background: #92b068;
+    background: var(--theme-accent-hover);
 }
 
 .theme-picker {
@@ -707,7 +753,7 @@ header h1 {
 }
 
 .theme-preset:hover {
-    border-color: #769656;
+    border-color: var(--theme-accent-hover);
     transform: scale(1.1);
 }
 
@@ -770,14 +816,14 @@ header h1 {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #769656;
+    background: var(--theme-accent);
     cursor: pointer;
     border: 2px solid #312e2b;
     transition: all 0.2s ease;
 }
 
 #contrast-slider::-webkit-slider-thumb:hover {
-    background: #92b068;
+    background: var(--theme-accent-hover);
     transform: scale(1.1);
 }
 
@@ -785,14 +831,14 @@ header h1 {
     width: 18px;
     height: 18px;
     border-radius: 50%;
-    background: #769656;
+    background: var(--theme-accent);
     cursor: pointer;
     border: 2px solid #312e2b;
     transition: all 0.2s ease;
 }
 
 #contrast-slider::-moz-range-thumb:hover {
-    background: #92b068;
+    background: var(--theme-accent-hover);
     transform: scale(1.1);
 }
 
@@ -802,6 +848,89 @@ header h1 {
     margin-top: 4px;
     font-size: 10px;
     color: #6b645a;
+}
+
+/* Piece set and Sound pack controls */
+.piece-set-control,
+.sound-pack-control,
+.volume-control {
+    margin-top: 16px;
+}
+
+.piece-set-control label,
+.sound-pack-control label,
+.volume-control label {
+    color: #b8b1a7;
+    font-size: 12px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.piece-set-control select,
+.sound-pack-control select {
+    width: 100%;
+    padding: 8px 12px;
+    background: #312e2b;
+    border: 1px solid #4a4741;
+    border-radius: 4px;
+    color: #f0d9b5;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.piece-set-control select:hover,
+.sound-pack-control select:hover {
+    border-color: var(--theme-accent);
+}
+
+.piece-set-control select:focus,
+.sound-pack-control select:focus {
+    outline: none;
+    border-color: var(--theme-accent);
+}
+
+#volume-slider {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: #4a4741;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+#volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--theme-accent);
+    cursor: pointer;
+    border: 2px solid #312e2b;
+    transition: all 0.2s ease;
+}
+
+#volume-slider::-webkit-slider-thumb:hover {
+    background: var(--theme-accent-hover);
+    transform: scale(1.1);
+}
+
+#volume-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--theme-accent);
+    cursor: pointer;
+    border: 2px solid #312e2b;
+    transition: all 0.2s ease;
+}
+
+#volume-slider::-moz-range-thumb:hover {
+    background: var(--theme-accent-hover);
+    transform: scale(1.1);
 }
 
 .move-history {
@@ -876,7 +1005,7 @@ header h1 {
 }
 
 #moves-list .move-entry.current {
-    background: rgba(118, 150, 86, 0.3);
+    background: var(--theme-accent-subtle);
 }
 
 /* Game Chat */
@@ -961,22 +1090,23 @@ header h1 {
 
 .game-chat .chat-input-container input:focus {
     outline: none;
-    border-color: #769656;
+    border-color: var(--theme-accent);
 }
 
 .game-chat .chat-input-container button {
     padding: 8px 16px;
-    background: #769656;
+    background: var(--theme-accent);
     color: white;
     border: none;
     border-radius: 4px;
     font-size: 13px;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.2s, box-shadow 0.2s;
 }
 
 .game-chat .chat-input-container button:hover {
-    background: #92b068;
+    background: var(--theme-accent-hover);
+    box-shadow: 0 0 6px var(--theme-accent-glow);
 }
 
 .hidden {

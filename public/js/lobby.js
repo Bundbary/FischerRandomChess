@@ -57,6 +57,7 @@ class ChessLobby {
             usernameInput.value = savedUsername;
             usernameInput.disabled = true;
             document.getElementById('set-username-btn').textContent = 'Logout';
+            document.getElementById('anonymous-btn').classList.add('hidden');
             console.log('Username registered with server:', savedUsername);
         }
     }
@@ -347,6 +348,7 @@ class ChessLobby {
         // Update UI to logged-in state
         usernameInput.disabled = true;
         btn.textContent = 'Logout';
+        document.getElementById('anonymous-btn').classList.add('hidden');
     }
 
     logout() {
@@ -365,6 +367,7 @@ class ChessLobby {
         usernameInput.focus();
         usernameInput.select();
         btn.textContent = 'Login';
+        document.getElementById('anonymous-btn').classList.remove('hidden');
     }
     
     generateAnonymousUsername() {

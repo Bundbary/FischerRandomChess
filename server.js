@@ -34,6 +34,120 @@ app.get('/game', (req, res) => {
 app.use(express.static('public'));
 app.use(express.static('.'));
 
+// ============ Asset Pack Discovery ============
+
+const PIECES_DIR = path.join(__dirname, 'public', 'pieces');
+const AUDIO_DIR = path.join(__dirname, 'public', 'audio');
+
+// Required piece files (without extension)
+const REQUIRED_PIECES = ['wK', 'wQ', 'wR', 'wB', 'wN', 'wP', 'bK', 'bQ', 'bR', 'bB', 'bN', 'bP'];
+const PIECE_EXTENSIONS = ['.svg', '.png'];
+
+// Required sound files (without extension)
+const REQUIRED_SOUNDS = ['move', 'capture', 'check', 'castle', 'game-start', 'game-end'];
+const SOUND_EXTENSIONS = ['.mp3', '.wav', '.ogg'];
+
+// Scan for available piece sets
+function scanPieceSets() {
+    const sets = [];
+    if (!fs.existsSync(PIECES_DIR)) return sets;
+
+    const folders = fs.readdirSync(PIECES_DIR, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+
+    for (const folder of folders) {
+        const folderPath = path.join(PIECES_DIR, folder);
+        const files = fs.readdirSync(folderPath);
+
+        // Check if all required pieces exist (any supported extension)
+        const hasAllPieces = REQUIRED_PIECES.every(piece =>
+            PIECE_EXTENSIONS.some(ext => files.includes(piece + ext))
+        );
+
+        if (hasAllPieces) {
+            // Determine format (prefer svg)
+            const format = PIECE_EXTENSIONS.find(ext =>
+                files.includes('wK' + ext)
+            ) || '.svg';
+
+            sets.push({
+                id: folder,
+                name: folder.charAt(0).toUpperCase() + folder.slice(1).replace(/_/g, ' '),
+                path: `/pieces/${folder}/`,
+                format: format
+            });
+        }
+    }
+
+    return sets;
+}
+
+// Scan for available sound packs
+function scanSoundPacks() {
+    const packs = [];
+    if (!fs.existsSync(AUDIO_DIR)) return packs;
+
+    const folders = fs.readdirSync(AUDIO_DIR, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => d.name);
+
+    for (const folder of folders) {
+        const folderPath = path.join(AUDIO_DIR, folder);
+        const files = fs.readdirSync(folderPath);
+
+        // Check which sounds exist (partial packs are OK)
+        const availableSounds = {};
+        for (const sound of REQUIRED_SOUNDS) {
+            const ext = SOUND_EXTENSIONS.find(e => files.includes(sound + e));
+            if (ext) {
+                availableSounds[sound] = `/audio/${folder}/${sound}${ext}`;
+            }
+        }
+
+        // Only include if at least 'move' sound exists
+        if (availableSounds.move) {
+            packs.push({
+                id: folder,
+                name: folder.charAt(0).toUpperCase() + folder.slice(1).replace(/_/g, ' '),
+                sounds: availableSounds
+            });
+        }
+    }
+
+    // Add a "None" option
+    packs.unshift({
+        id: 'none',
+        name: 'None',
+        sounds: {}
+    });
+
+    return packs;
+}
+
+// Cache the scans (refresh on server restart)
+let cachedPieceSets = scanPieceSets();
+let cachedSoundPacks = scanSoundPacks();
+
+console.log(`Found ${cachedPieceSets.length} piece set(s):`, cachedPieceSets.map(s => s.id).join(', '));
+console.log(`Found ${cachedSoundPacks.length - 1} sound pack(s):`, cachedSoundPacks.filter(p => p.id !== 'none').map(p => p.id).join(', ') || '(none)');
+
+// API endpoints for asset packs
+app.get('/api/piece-sets', (req, res) => {
+    res.json(cachedPieceSets);
+});
+
+app.get('/api/sound-packs', (req, res) => {
+    res.json(cachedSoundPacks);
+});
+
+// Refresh cache endpoint (for development)
+app.post('/api/refresh-assets', (req, res) => {
+    cachedPieceSets = scanPieceSets();
+    cachedSoundPacks = scanSoundPacks();
+    res.json({ pieceSets: cachedPieceSets.length, soundPacks: cachedSoundPacks.length });
+});
+
 // Store active games in memory
 const games = new Map();
 
@@ -1154,6 +1268,12 @@ io.on('connection', (socket) => {
         // Build move record with extra info for special moves
         const moveRecord = { from, to, piece: piece.piece, color: piece.color };
 
+        // Check for captured piece before executing move
+        const targetPiece = game.board[to];
+        if (targetPiece) {
+            moveRecord.captured = targetPiece.piece;
+        }
+
         // Execute the move
         if (isCastle) {
             // Get rook positions before executing
@@ -1190,6 +1310,7 @@ io.on('connection', (socket) => {
             const direction = piece.color === 'white' ? -1 : 1;
             const capturedSquare = to[0] + (parseInt(to[1]) + direction);
             moveRecord.enPassantCapture = capturedSquare;
+            moveRecord.captured = 'p'; // En passant always captures a pawn
 
             executeEnPassant(game.board, from, to, piece.color);
         } else {
